@@ -78,6 +78,7 @@
       }
     },
     onAuthError: () => {
+      window.localStorage.removeItem(TOKEN_KEY);
       authModal.classList.remove('hidden');
     }
   });

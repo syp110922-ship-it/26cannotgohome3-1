@@ -51,8 +51,36 @@ function createWebSocketGateway({ server, config, db, getStateMachine }) {
       displaySockets[id] = null;
       try {
         ws.close(4002, 'heartbeat_timeout');
+        setTimeout(() => {
+          if (ws.readyState !== WebSocket.CLOSED) {
+            try {
+              ws.terminate();
+            } catch {
+              // ignore
+            }
+          }
+        }, 500).unref();
       } catch {
         // ignore close errors
+      }
+    }
+  }
+
+  function disconnectAll(reason = 'token_revoked') {
+    for (const ws of wss.clients) {
+      try {
+        ws.close(4003, reason);
+        setTimeout(() => {
+          if (ws.readyState !== WebSocket.CLOSED) {
+            try {
+              ws.terminate();
+            } catch {
+              // ignore
+            }
+          }
+        }, 500).unref();
+      } catch {
+        // ignore
       }
     }
   }
@@ -67,7 +95,7 @@ function createWebSocketGateway({ server, config, db, getStateMachine }) {
   server.on('upgrade', (req, socket, head) => {
     let url;
     try {
-      url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      url = new URL(req.url, 'http://localhost');
     } catch {
       rejectUpgrade(socket, 400, 'Bad Request');
       return;
@@ -126,6 +154,14 @@ function createWebSocketGateway({ server, config, db, getStateMachine }) {
   wss.on('connection', (ws, meta) => {
     const sm = getStateMachine();
     const { role, id, claims } = meta;
+    ws.isAlive = true;
+
+    ws.on('pong', () => {
+      ws.isAlive = true;
+      if (role === 'display') {
+        sm.touchHeartbeat(id);
+      }
+    });
 
     if (role === 'control') {
       controlSockets.add(ws);
@@ -136,6 +172,15 @@ function createWebSocketGateway({ server, config, db, getStateMachine }) {
       if (previous && previous !== ws) {
         try {
           previous.close(4001, 'replaced_by_new_connection');
+          setTimeout(() => {
+            if (previous.readyState !== WebSocket.CLOSED) {
+              try {
+                previous.terminate();
+              } catch {
+                // ignore
+              }
+            }
+          }, 500).unref();
         } catch {
           // ignore
         }
@@ -146,6 +191,8 @@ function createWebSocketGateway({ server, config, db, getStateMachine }) {
     }
 
     ws.on('message', (raw) => {
+      ws.isAlive = true;
+
       let msg;
       try {
         msg = JSON.parse(raw.toString('utf8'));
@@ -252,7 +299,31 @@ function createWebSocketGateway({ server, config, db, getStateMachine }) {
     });
   });
 
+  // Native WebSocket ping/pong sweep to clean up half-open TCP connections
+  const livenessTimer = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (ws.isAlive === false) {
+        try {
+          ws.terminate();
+        } catch {
+          // ignore
+        }
+        continue;
+      }
+      ws.isAlive = false;
+      try {
+        ws.ping();
+      } catch {
+        // ignore
+      }
+    }
+  }, config.wsPingIntervalMs || 10000);
+  if (typeof livenessTimer.unref === 'function') {
+    livenessTimer.unref();
+  }
+
   function close() {
+    clearInterval(livenessTimer);
     for (const ws of wss.clients) {
       try {
         ws.terminate();
@@ -268,6 +339,7 @@ function createWebSocketGateway({ server, config, db, getStateMachine }) {
     broadcastToControl,
     sendToDisplays,
     closeDisplaySocket,
+    disconnectAll,
     close
   };
 }

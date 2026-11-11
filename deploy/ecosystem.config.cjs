@@ -13,7 +13,8 @@ module.exports = {
         NODE_ENV: 'production',
         HOST: '127.0.0.1',
         PORT: '3000',
-        SERVE_FRONTEND: 'false'
+        SERVE_FRONTEND: 'false',
+        TRUST_PROXY: 'true'
       }
     }
   ]

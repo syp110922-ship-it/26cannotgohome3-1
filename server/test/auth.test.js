@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
@@ -7,7 +8,8 @@ const {
   verifyPin,
   signToken,
   verifyToken,
-  PinAttemptGuard
+  PinAttemptGuard,
+  IpRateLimiter
 } = require('../src/auth');
 
 describe('auth module', () => {
@@ -67,5 +69,55 @@ describe('auth module', () => {
     const expCheck = verifyToken(expired.token, secret, 1);
     assert.equal(expCheck.valid, false);
     assert.equal(expCheck.reason, 'expired_token');
+  });
+
+  it('rejects oversized PINs, non-object JWT claims, and tampered alg headers', () => {
+    const hash = hashPin('1234');
+    assert.equal(verifyPin('1'.repeat(65), hash), false);
+    assert.throws(() => hashPin('x'.repeat(65)));
+
+    const secret = 'test-secret-key-0123456789abcdef';
+    const b64 = (s) =>
+      Buffer.from(s).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+    const signRaw = (hdr, body) => {
+      const input = `${b64(JSON.stringify(hdr))}.${b64(JSON.stringify(body))}`;
+      const sig = crypto
+        .createHmac('sha256', secret)
+        .update(input)
+        .digest('base64')
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+      return `${input}.${sig}`;
+    };
+
+    const nullClaims = signRaw({ alg: 'HS256', typ: 'JWT' }, null);
+    assert.equal(verifyToken(nullClaims, secret, 1).valid, false);
+
+    const wrongAlg = signRaw({ alg: 'none', typ: 'JWT' }, { exp: 9999999999, ver: 1 });
+    assert.equal(verifyToken(wrongAlg, secret, 1).valid, false);
+  });
+
+  it('persists PinAttemptGuard state across store reloads and enforces IpRateLimiter', () => {
+    let persisted = { failedAttempts: 0, lockedUntil: 0 };
+    const store = {
+      load: () => persisted,
+      save: (next) => {
+        persisted = next;
+      }
+    };
+    const guard1 = new PinAttemptGuard({ maxAttempts: 5, lockoutMs: 60000, store });
+    for (let i = 0; i < 5; i++) guard1.recordFailure(1000);
+
+    // Reload new guard simulating server restart
+    const guard2 = new PinAttemptGuard({ maxAttempts: 5, lockoutMs: 60000, store });
+    assert.equal(guard2.checkLock(2000).locked, true);
+
+    const limiter = new IpRateLimiter({ maxRequests: 2, windowMs: 10000 });
+    assert.equal(limiter.consume('1.2.3.4', 100).allowed, true);
+    assert.equal(limiter.consume('1.2.3.4', 200).allowed, true);
+    assert.equal(limiter.consume('1.2.3.4', 300).allowed, false);
+    assert.equal(limiter.consume('5.6.7.8', 300).allowed, true);
+    assert.equal(limiter.consume('1.2.3.4', 11000).allowed, true);
   });
 });

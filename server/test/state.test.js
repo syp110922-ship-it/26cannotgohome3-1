@@ -158,4 +158,43 @@ describe('state machine', () => {
     const m3 = sm.sendMessage('입장해 주세요');
     assert.equal(m3.ok, true);
   });
+
+  it('resets stale cache on display reconnect and avoids stalling playback completion if a dropped display reconnects mid-play', async () => {
+    db.insertVideo({
+      id: 'vid-4',
+      filename: 'resilient.mp4',
+      size: 1024,
+      duration: 5,
+      sha256: 'jkl',
+      active: true
+    });
+    sm.activateVideo('vid-4');
+    sm.connectDisplay('A');
+    sm.connectDisplay('B');
+    sm.updateDisplayState('A', { cached: ['vid-4'], dl: 100 });
+    sm.updateDisplayState('B', { cached: ['vid-4'], dl: 100 });
+    assert.equal(sm.getState(), STATES.READY);
+
+    // Disconnect B then reconnect -> must be NOT_READY until B verifies cache again
+    sm.disconnectDisplay('B');
+    sm.connectDisplay('B');
+    assert.equal(sm.getState(), STATES.NOT_READY);
+    assert.deepEqual(sm.getSnapshot().displays.B.cached, []);
+    assert.equal(sm.getSnapshot().displays.B.dl, 0);
+
+    // Restore B readiness and start play
+    sm.updateDisplayState('B', { cached: ['vid-4'], dl: 100 });
+    assert.equal(sm.getState(), STATES.READY);
+    assert.equal(sm.requestPlay().ok, true);
+    assert.equal(sm.getState(), STATES.PLAYING);
+
+    // B drops mid-play and reloads/reconnects on standby
+    sm.disconnectDisplay('B');
+    sm.connectDisplay('B');
+    assert.equal(sm.getState(), STATES.PLAYING);
+
+    // When A ends, playback must immediately finish to COOLDOWN without stalling on B
+    sm.handleDisplayEnded('A', { videoId: 'vid-4' });
+    assert.equal(sm.getState(), STATES.COOLDOWN);
+  });
 });

@@ -11,36 +11,98 @@
   <main class="black-stage" id="black-stage">
     <video
       id="player"
-      class="video-player hidden"
+      class="video-player"
       playsinline
       disablepictureinpicture
-      controlslist="nodownload"
+      controlslist="nodownload noplaybackrate"
+      preload="auto"
     ></video>
 
-    <div class="msg-overlay hidden" id="msg-overlay"></div>
+    <div class="msg-overlay hidden" id="msg-overlay" aria-live="polite"></div>
+
+    <!-- Invisible 5-second long-press corner trigger for staff diagnostics -->
+    <div class="admin-corner" id="admin-corner" aria-hidden="true"></div>
   </main>
 
+  <!-- Initial Staff Setup Screen (1-tap fullscreen, audio unlock, Wake Lock) -->
   <section class="setup-screen" id="setup-screen">
     <div class="setup-card">
       <h1 id="device-title">체험자 화면</h1>
       <p class="setup-desc" id="setup-desc">
-        스태프 초기 설정 화면입니다. 시작을 누르면 전체화면·오디오 잠금 해제·화면 켜짐 유지 후 검은 대기 화면으로 전환됩니다.
+        스태프 초기 세팅 화면입니다. 시작을 누르면 전체화면, 오디오 잠금 해제, 화면 켜짐 유지를 활성화한 뒤 검은 대기 화면으로 전환됩니다.
       </p>
+
+      <div class="server-pill" id="setup-server-url"></div>
 
       <div class="pin-row hidden" id="pin-row">
         <input
           type="password"
           inputmode="numeric"
           id="display-pin"
-          placeholder="스태프 PIN (최초 1회)"
+          placeholder="스태프 공용 PIN (최초 1회)"
           autocomplete="off"
         />
       </div>
+
+      <details class="server-override" id="server-override">
+        <summary>서버 주소 수동 설정</summary>
+        <div class="server-override-row">
+          <input
+            type="url"
+            id="server-url-input"
+            placeholder="https://your-subdomain.duckdns.org"
+            autocomplete="off"
+          />
+          <button type="button" class="secondary-btn" id="save-server-btn">적용</button>
+        </div>
+      </details>
 
       <p class="setup-error" id="setup-error"></p>
       <button class="start-btn" id="start-btn" type="button">시작</button>
     </div>
   </section>
+
+  <!-- Hidden Admin PIN Prompt (after 5s corner hold) -->
+  <div class="modal-backdrop hidden" id="corner-pin-modal">
+    <form class="modal-card" id="corner-pin-form">
+      <h2>관리자 확인</h2>
+      <p class="modal-desc">기기 정보 확인을 위해 스태프 PIN을 입력해 주세요.</p>
+      <input
+        type="password"
+        inputmode="numeric"
+        id="corner-pin-input"
+        placeholder="PIN 입력"
+        autocomplete="off"
+        required
+      />
+      <p class="setup-error" id="corner-pin-error"></p>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="corner-pin-cancel">취소</button>
+        <button type="submit" class="primary-btn">확인</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Hidden Admin Info Modal (shown only after PIN verification) -->
+  <div class="modal-backdrop hidden" id="corner-info-modal">
+    <div class="modal-card info-card">
+      <h2>기기 상태 정보</h2>
+      <dl class="info-list">
+        <div><dt>기기 ID</dt><dd id="info-device-id">-</dd></div>
+        <div><dt>서버 주소</dt><dd id="info-server-url">-</dd></div>
+        <div><dt>WS 연결</dt><dd id="info-ws-status">-</dd></div>
+        <div><dt>RTT / 시계 오차</dt><dd id="info-clock-sync">-</dd></div>
+        <div><dt>전체화면 / WakeLock</dt><dd id="info-device-locks">-</dd></div>
+        <div><dt>활성 영상</dt><dd id="info-video-state">-</dd></div>
+      </dl>
+      <div class="info-btn-grid">
+        <button type="button" class="secondary-btn" id="info-fullscreen-btn">전체화면 복구</button>
+        <button type="button" class="secondary-btn" id="info-reconnect-btn">재연결</button>
+        <button type="button" class="danger-btn" id="info-reset-token-btn">기기 등록 초기화</button>
+        <button type="button" class="primary-btn" id="info-close-btn">닫기</button>
+      </div>
+    </div>
+  </div>
 
   <script src="./config.js"></script>
   <script src="./shared/ws-client.js"></script>

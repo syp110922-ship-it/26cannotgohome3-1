@@ -10,6 +10,7 @@
 
   function createSyncClient({
     wsBaseUrl,
+    apiBase = window.GHOST_CONFIG?.apiBase || window.location.origin,
     role,
     id = null,
     getToken,
@@ -21,9 +22,11 @@
     let ws = null;
     let closedByUser = false;
     let reconnectAttempt = 0;
+    let consecutiveHandshakeFails = 0;
     let reconnectTimer = null;
     let heartbeatTimer = null;
     let syncTimer = null;
+    let connected = false;
 
     const samples = [];
     let currentRttMs = null;
@@ -102,6 +105,26 @@
       }
     }
 
+    async function verifyTokenOrReconnect() {
+      const token = typeof getToken === 'function' ? getToken() : '';
+      if (!token) {
+        if (typeof onAuthError === 'function') onAuthError();
+        return;
+      }
+      try {
+        const res = await fetch(`${apiBase}/auth/verify`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.status === 401 || res.status === 403) {
+          if (typeof onAuthError === 'function') onAuthError();
+          return;
+        }
+      } catch {
+        // Server unreachable or Wi-Fi offline: keep reconnecting
+      }
+      scheduleReconnect();
+    }
+
     function scheduleReconnect() {
       if (closedByUser || reconnectTimer) return;
       const delay = Math.min(3000, 500 * Math.pow(2, reconnectAttempt));
@@ -125,10 +148,16 @@
         return;
       }
 
-      ws = new WebSocket(buildUrl());
+      const socket = new WebSocket(buildUrl());
+      ws = socket;
+      let openedThisAttempt = false;
 
-      ws.addEventListener('open', () => {
+      socket.addEventListener('open', () => {
+        if (ws !== socket) return;
+        openedThisAttempt = true;
+        connected = true;
         reconnectAttempt = 0;
+        consecutiveHandshakeFails = 0;
         if (typeof onStatusChange === 'function') {
           onStatusChange({ connected: true, reconnectingInMs: 0 });
         }
@@ -137,7 +166,8 @@
         syncTimer = setInterval(burstClockSync, 30000);
       });
 
-      ws.addEventListener('message', (event) => {
+      socket.addEventListener('message', (event) => {
+        if (ws !== socket) return;
         let msg;
         try {
           msg = JSON.parse(event.data);
@@ -153,33 +183,48 @@
         }
       });
 
-      ws.addEventListener('close', (event) => {
+      socket.addEventListener('close', (event) => {
+        if (ws !== socket) return;
         clearTimers();
+        connected = false;
         if (typeof onStatusChange === 'function') {
           onStatusChange({ connected: false, code: event.code });
         }
         if (event.code === 4001) {
-          // Replaced by newer tab/session
+          // Replaced by newer session on same device
           return;
+        }
+        if (event.code === 4003) {
+          if (typeof onAuthError === 'function') onAuthError();
+          return;
+        }
+        if (!openedThisAttempt) {
+          consecutiveHandshakeFails += 1;
+          if (consecutiveHandshakeFails >= 2) {
+            verifyTokenOrReconnect();
+            return;
+          }
         }
         scheduleReconnect();
       });
 
-      ws.addEventListener('error', () => {
-        // Close listener triggers reconnect
+      socket.addEventListener('error', () => {
+        // Handled by close listener
       });
     }
 
     function disconnect() {
       closedByUser = true;
+      connected = false;
       clearTimers();
       if (ws) {
+        const old = ws;
+        ws = null;
         try {
-          ws.close(1000, 'client_disconnect');
+          old.close(1000, 'client_disconnect');
         } catch {
           // ignore
         }
-        ws = null;
       }
     }
 
@@ -187,6 +232,7 @@
       connect,
       disconnect,
       send,
+      isConnected: () => connected,
       serverNow: () => Date.now() + currentOffsetMs,
       getClockStats: () => ({ rttMs: currentRttMs, offsetMs: currentOffsetMs })
     };

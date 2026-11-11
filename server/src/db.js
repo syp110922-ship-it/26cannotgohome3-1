@@ -146,6 +146,17 @@ function createDatabase(config) {
     return getSetting('pin_is_default', 'false') === 'true';
   }
 
+  function getPinGuardState() {
+    return getJsonSetting('pin_guard_state', { failedAttempts: 0, lockedUntil: 0 });
+  }
+
+  function savePinGuardState({ failedAttempts, lockedUntil }) {
+    setJsonSetting('pin_guard_state', {
+      failedAttempts: Number(failedAttempts || 0),
+      lockedUntil: Number(lockedUntil || 0)
+    });
+  }
+
   function getPresets() {
     const list = getJsonSetting('presets', DEFAULT_PRESETS);
     return Array.isArray(list) ? list : DEFAULT_PRESETS;
@@ -336,6 +347,8 @@ function createDatabase(config) {
     getPinHash,
     updatePinHash,
     isDefaultPin,
+    getPinGuardState,
+    savePinGuardState,
     getPresets,
     setPresets,
     getRequiredDisplays,

@@ -60,7 +60,10 @@ function loadConfig(overrides = {}) {
   const dbPath =
     overrides.dbPath === ':memory:'
       ? ':memory:'
-      : path.resolve(REPO_ROOT, overrides.dbPath || process.env.DB_PATH || path.join(dataDir, 'app.db'));
+      : path.resolve(
+          REPO_ROOT,
+          overrides.dbPath || process.env.DB_PATH || path.join(dataDir, 'app.db')
+        );
 
   return {
     repoRoot: REPO_ROOT,
@@ -72,12 +75,20 @@ function loadConfig(overrides = {}) {
     frontendDir: path.resolve(REPO_ROOT, overrides.frontendDir || 'frontend'),
     serveFrontend:
       overrides.serveFrontend ?? (process.env.SERVE_FRONTEND ?? 'true') !== 'false',
+    trustProxy:
+      overrides.trustProxy ?? (process.env.TRUST_PROXY ?? 'false') === 'true',
     allowedOrigins:
       overrides.allowedOrigins || parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
     authSecret: overrides.authSecret ?? process.env.AUTH_SECRET ?? '',
     initialPin: String(overrides.initialPin ?? process.env.INITIAL_PIN ?? '1234'),
     pinMaxAttempts: Number(overrides.pinMaxAttempts ?? process.env.PIN_MAX_ATTEMPTS ?? 5),
     pinLockoutMs: Number(overrides.pinLockoutMs ?? process.env.PIN_LOCKOUT_MS ?? 60000),
+    authIpRateLimitMax: Number(
+      overrides.authIpRateLimitMax ?? process.env.AUTH_IP_RATE_LIMIT_MAX ?? 20
+    ),
+    authIpRateLimitWindowMs: Number(
+      overrides.authIpRateLimitWindowMs ?? process.env.AUTH_IP_RATE_LIMIT_WINDOW_MS ?? 60000
+    ),
     adminTokenTtlSec: Number(
       overrides.adminTokenTtlSec ?? process.env.ADMIN_TOKEN_TTL_SEC ?? 43200
     ),
@@ -92,6 +103,9 @@ function loadConfig(overrides = {}) {
     ),
     heartbeatTimeoutMs: Number(
       overrides.heartbeatTimeoutMs ?? process.env.HEARTBEAT_TIMEOUT_MS ?? 15000
+    ),
+    wsPingIntervalMs: Number(
+      overrides.wsPingIntervalMs ?? process.env.WS_PING_INTERVAL_MS ?? 10000
     ),
     cooldownMs: Number(overrides.cooldownMs ?? process.env.COOLDOWN_MS ?? 3000),
     playScheduleLeadMs: Number(

@@ -12,7 +12,11 @@ function createApp(configOverrides = {}) {
   const db = createDatabase(config);
   const pinGuard = new PinAttemptGuard({
     maxAttempts: config.pinMaxAttempts,
-    lockoutMs: config.pinLockoutMs
+    lockoutMs: config.pinLockoutMs,
+    store: {
+      load: () => db.getPinGuardState(),
+      save: (state) => db.savePinGuardState(state)
+    }
   });
 
   let stateMachine = null;
@@ -22,7 +26,8 @@ function createApp(configOverrides = {}) {
     config,
     db,
     pinGuard,
-    getStateMachine: () => stateMachine
+    getStateMachine: () => stateMachine,
+    onPinChanged: () => wsGateway?.disconnectAll('pin_changed')
   });
 
   wsGateway = createWebSocketGateway({

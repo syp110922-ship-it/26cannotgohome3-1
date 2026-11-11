@@ -3,7 +3,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
-const { verifyPin, signToken, verifyToken, hashPin } = require('./auth');
+const {
+  MAX_PIN_LENGTH,
+  verifyPin,
+  signToken,
+  verifyToken,
+  hashPin,
+  IpRateLimiter
+} = require('./auth');
 const { isOriginAllowed } = require('./ws');
 
 const MIME_TYPES = {
@@ -18,41 +25,70 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon'
 };
 
+const HTML_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self' data: blob:",
+  "media-src 'self' blob: data:",
+  "connect-src 'self' ws: wss: https: http:",
+  "object-src 'none'",
+  "base-uri 'self'"
+].join('; ');
+
 function sendJson(res, statusCode, data) {
   const body = JSON.stringify(data);
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
-    'Cache-Control': 'no-store'
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer'
   });
   res.end(body);
 }
 
-function readJsonBody(req, maxBytes = 64 * 1024) {
+function readJsonBody(req, maxBytes = 64 * 1024, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let total = 0;
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      req.destroy();
+      reject(Object.assign(new Error('Request body timeout'), { statusCode: 408 }));
+    }, timeoutMs);
+
+    const finish = (fn, val) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(val);
+    };
+
     req.on('data', (chunk) => {
       total += chunk.length;
       if (total > maxBytes) {
-        reject(Object.assign(new Error('Payload too large'), { statusCode: 413 }));
         req.destroy();
+        finish(reject, Object.assign(new Error('Payload too large'), { statusCode: 413 }));
         return;
       }
       chunks.push(chunk);
     });
     req.on('end', () => {
       if (chunks.length === 0) {
-        resolve({});
+        finish(resolve, {});
         return;
       }
       try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        finish(resolve, JSON.parse(Buffer.concat(chunks).toString('utf8')));
       } catch {
-        reject(Object.assign(new Error('Invalid JSON'), { statusCode: 400 }));
+        finish(reject, Object.assign(new Error('Invalid JSON'), { statusCode: 400 }));
       }
     });
-    req.on('error', reject);
+    req.on('error', (err) => finish(reject, err));
   });
 }
 
@@ -65,8 +101,34 @@ function getDiskFreeBytes(targetDir) {
   }
 }
 
-function createHttpServer({ config, db, pinGuard, getStateMachine }) {
+function isLoopbackIp(addr) {
+  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+}
+
+function getClientIp(req, config) {
+  const remote = req.socket?.remoteAddress || '';
+  if (config.trustProxy && isLoopbackIp(remote)) {
+    const xff = req.headers['x-forwarded-for'];
+    if (typeof xff === 'string' && xff.trim()) {
+      const parts = xff.split(',').map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 0) {
+        return parts[parts.length - 1];
+      }
+    }
+  }
+  return remote || 'unknown';
+}
+
+function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged }) {
+  const authIpLimiter = new IpRateLimiter({
+    maxRequests: config.authIpRateLimitMax,
+    windowMs: config.authIpRateLimitWindowMs
+  });
+
   function applyCors(req, res) {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+
     const origin = req.headers.origin;
     if (config.allowedOrigins.includes('*')) {
       res.setHeader('Access-Control-Allow-Origin', origin || '*');
@@ -76,6 +138,26 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  }
+
+  function rejectDisallowedCrossOriginMutation(req, res) {
+    if (!['POST', 'PUT', 'DELETE'].includes(req.method)) return false;
+    if (config.allowedOrigins.includes('*')) return false;
+    const origin = req.headers.origin;
+    if (origin && !isOriginAllowed(origin, config.allowedOrigins)) {
+      sendJson(res, 403, { ok: false, error: 'forbidden_origin' });
+      return true;
+    }
+    return false;
+  }
+
+  function requireJsonContentType(req, res) {
+    const ct = String(req.headers['content-type'] || '').toLowerCase();
+    if (!ct.includes('application/json')) {
+      sendJson(res, 415, { ok: false, error: 'unsupported_media_type' });
+      return false;
+    }
+    return true;
   }
 
   function extractToken(req, url) {
@@ -109,35 +191,62 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
       return true;
     }
 
-    const resolved = path.resolve(config.frontendDir, `.${relPath}`);
+    const frontendRoot = fs.existsSync(config.frontendDir)
+      ? fs.realpathSync(config.frontendDir)
+      : config.frontendDir;
+    const resolved = path.resolve(frontendRoot, `.${relPath}`);
     if (
-      resolved !== config.frontendDir &&
-      !resolved.startsWith(config.frontendDir + path.sep)
+      resolved !== frontendRoot &&
+      !resolved.startsWith(frontendRoot + path.sep)
     ) {
       sendJson(res, 403, { ok: false, error: 'forbidden_path' });
       return true;
     }
 
     if (!fs.existsSync(resolved)) return false;
-    const stat = fs.statSync(resolved);
+    const realTarget = fs.realpathSync(resolved);
+    if (
+      realTarget !== frontendRoot &&
+      !realTarget.startsWith(frontendRoot + path.sep)
+    ) {
+      sendJson(res, 403, { ok: false, error: 'forbidden_path' });
+      return true;
+    }
+
+    const stat = fs.statSync(realTarget);
     if (!stat.isFile()) return false;
 
-    const ext = path.extname(resolved).toLowerCase();
+    const ext = path.extname(realTarget).toLowerCase();
     const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
     const cacheControl =
       ext === '.webp' || ext === '.png' ? 'public, max-age=604800' : 'no-store';
 
-    res.writeHead(200, {
+    const headers = {
       'Content-Type': mimeType,
       'Content-Length': stat.size,
       'Cache-Control': cacheControl,
-      'X-Content-Type-Options': 'nosniff'
-    });
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer'
+    };
+    if (ext === '.html') {
+      headers['Content-Security-Policy'] = HTML_CSP;
+    }
+
+    res.writeHead(200, headers);
     if (req.method === 'HEAD') {
       res.end();
       return true;
     }
-    fs.createReadStream(resolved).pipe(res);
+
+    const stream = fs.createReadStream(realTarget);
+    stream.on('error', () => {
+      if (!res.headersSent) {
+        sendJson(res, 500, { ok: false, error: 'file_read_error' });
+      } else {
+        res.destroy();
+      }
+    });
+    stream.pipe(res);
     return true;
   }
 
@@ -150,9 +259,13 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
       return;
     }
 
+    if (rejectDisallowedCrossOriginMutation(req, res)) {
+      return;
+    }
+
     let url;
     try {
-      url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      url = new URL(req.url, 'http://localhost');
     } catch {
       sendJson(res, 400, { ok: false, error: 'invalid_url' });
       return;
@@ -176,6 +289,18 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
 
       // PIN Authentication -> issues admin (12h) or device/control (30d) token
       if (req.method === 'POST' && pathname === '/auth') {
+        if (!requireJsonContentType(req, res)) return;
+
+        const ipCheck = authIpLimiter.consume(getClientIp(req, config));
+        if (!ipCheck.allowed) {
+          sendJson(res, 429, {
+            ok: false,
+            error: 'rate_limited',
+            retryAfterSec: ipCheck.retryAfterSec
+          });
+          return;
+        }
+
         const lock = pinGuard.checkLock();
         if (lock.locked) {
           sendJson(res, 429, {
@@ -191,6 +316,10 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
         const scope = body.scope || 'admin';
         const deviceId = body.deviceId ? String(body.deviceId).toUpperCase() : null;
 
+        if (!pin || pin.length > MAX_PIN_LENGTH) {
+          sendJson(res, 400, { ok: false, error: 'invalid_pin_format' });
+          return;
+        }
         if (!['admin', 'control', 'display'].includes(scope)) {
           sendJson(res, 400, { ok: false, error: 'invalid_scope' });
           return;
@@ -293,6 +422,7 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
       }
 
       if (req.method === 'PUT' && pathname === '/settings') {
+        if (!requireJsonContentType(req, res)) return;
         const claims = requireAuth(req, res, url, ['admin']);
         if (!claims) return;
         const body = await readJsonBody(req);
@@ -317,22 +447,52 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
       }
 
       if (req.method === 'PUT' && pathname === '/settings/pin') {
+        if (!requireJsonContentType(req, res)) return;
         const claims = requireAuth(req, res, url, ['admin']);
         if (!claims) return;
+
+        const lock = pinGuard.checkLock();
+        if (lock.locked) {
+          sendJson(res, 429, {
+            ok: false,
+            error: 'pin_locked',
+            retryAfterSec: lock.retryAfterSec
+          });
+          return;
+        }
+
         const body = await readJsonBody(req);
         const currentPin = String(body.currentPin ?? '');
         const newPin = String(body.newPin ?? '').trim();
 
-        if (!verifyPin(currentPin, db.getPinHash())) {
-          sendJson(res, 401, { ok: false, error: 'invalid_current_pin' });
+        if (!currentPin || currentPin.length > MAX_PIN_LENGTH || !verifyPin(currentPin, db.getPinHash())) {
+          const failure = pinGuard.recordFailure();
+          if (failure.locked) {
+            sendJson(res, 429, {
+              ok: false,
+              error: 'pin_locked',
+              retryAfterSec: failure.retryAfterSec
+            });
+            return;
+          }
+          sendJson(res, 401, {
+            ok: false,
+            error: 'invalid_current_pin',
+            attemptsRemaining: failure.attemptsRemaining
+          });
           return;
         }
+
         if (newPin.length < 4 || newPin.length > 20) {
           sendJson(res, 400, { ok: false, error: 'invalid_new_pin_length' });
           return;
         }
 
+        pinGuard.recordSuccess();
         const nextVer = db.updatePinHash(hashPin(newPin));
+        if (typeof onPinChanged === 'function') {
+          onPinChanged();
+        }
         const { token, expiresAt } = signToken(
           { scope: 'admin', deviceId: null, ver: nextVer },
           db.getAuthSecret(),
@@ -350,7 +510,7 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
         return;
       }
 
-      // Video management routes (scaffolded in Phase 1, full streaming implementation in Phase 4)
+      // Video management routes (scaffolded for Phase 4)
       if (req.method === 'GET' && pathname === '/videos') {
         const claims = requireAuth(req, res, url, ['admin']);
         if (!claims) return;
@@ -368,7 +528,7 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
         if (!claims) return;
         sendJson(res, 501, {
           ok: false,
-          error: 'not_implemented_phase1',
+          error: 'not_implemented_phase4',
           message: 'Streaming video upload will be implemented in Phase 4'
         });
         return;
@@ -382,7 +542,7 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
         if (!claims) return;
         sendJson(res, 501, {
           ok: false,
-          error: 'not_implemented_phase1',
+          error: 'not_implemented_phase4',
           message: 'Range video streaming will be implemented in Phase 4'
         });
         return;
@@ -393,7 +553,7 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
         if (!claims) return;
         sendJson(res, 501, {
           ok: false,
-          error: 'not_implemented_phase1',
+          error: 'not_implemented_phase4',
           message: 'Video deletion will be implemented in Phase 4'
         });
         return;
@@ -404,7 +564,7 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
         if (!claims) return;
         sendJson(res, 501, {
           ok: false,
-          error: 'not_implemented_phase1',
+          error: 'not_implemented_phase4',
           message: 'Video activation will be wired with Phase 4 upload'
         });
         return;
@@ -425,6 +585,10 @@ function createHttpServer({ config, db, pinGuard, getStateMachine }) {
       });
     }
   });
+
+  // Protect against slowloris headers while allowing multi-minute large video transfers
+  server.headersTimeout = 15000;
+  server.requestTimeout = 0;
 
   return server;
 }

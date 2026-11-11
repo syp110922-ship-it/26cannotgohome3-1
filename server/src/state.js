@@ -174,6 +174,9 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     const d = displays[id];
     if (!d) return;
     d.connected = true;
+    d.cached = [];
+    d.dl = 0;
+    d.pos = 0;
     d.lastSeen = Date.now();
     d.error = null;
     recomputeState();
@@ -186,8 +189,9 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     d.connected = false;
     recomputeState();
 
-    // If playing and NO playing displays remain connected, stop cleanly
+    // If playing, detach this display from active run so a reconnect does not stall completion
     if (state === STATES.PLAYING && playback) {
+      playback.startedDisplays.delete(id);
       const anyConnectedPlaying = [...playback.startedDisplays].some(
         (dispId) => displays[dispId]?.connected
       );
@@ -230,18 +234,14 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
       d.dl = Math.max(0, Math.min(100, Math.round(payload.dl)));
     }
     if (typeof payload.rttMs === 'number' && Number.isFinite(payload.rttMs)) {
-      d.rttMs = Math.round(metricsOr(payload.rttMs));
+      d.rttMs = Math.round(payload.rttMs);
     }
     if (typeof payload.offsetMs === 'number' && Number.isFinite(payload.offsetMs)) {
-      d.offsetMs = Math.round(metricsOr(payload.offsetMs));
+      d.offsetMs = Math.round(payload.offsetMs);
     }
     d.error = payload.error ? String(payload.error) : null;
     recomputeState();
     emitStatus();
-  }
-
-  function metricsOr(v) {
-    return Number.isFinite(v) ? v : 0;
   }
 
   function updateDisplayPos(id, payload = {}) {
@@ -332,7 +332,7 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     }, safetyTimeoutMs);
 
     if (typeof onSendToDisplays === 'function') {
-      for (const dispId of ['A', 'B']) {
+      for (const dispId of startedDisplays) {
         const offset = Number(audioOffsets[dispId] || 0);
         onSendToDisplays(
           {
@@ -408,11 +408,9 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
       return { ok: false, reason: 'video_not_found' };
     }
     activeVideo = updated;
-    // Reset download status until displays confirm cache for new video
+    // Synchronize download readiness for the newly active video
     for (const id of ['A', 'B']) {
-      if (!displays[id].cached.includes(activeVideo.id)) {
-        displays[id].dl = 0;
-      }
+      displays[id].dl = displays[id].cached.includes(activeVideo.id) ? 100 : 0;
     }
     recomputeState();
 
@@ -471,6 +469,9 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
       if (d.connected && d.lastSeen && now - d.lastSeen > config.heartbeatTimeoutMs) {
         d.connected = false;
         changed = true;
+        if (state === STATES.PLAYING && playback) {
+          playback.startedDisplays.delete(id);
+        }
         if (typeof onCloseDisplaySocket === 'function') {
           onCloseDisplaySocket(id);
         }

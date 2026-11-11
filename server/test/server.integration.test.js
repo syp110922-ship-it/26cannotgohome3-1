@@ -131,6 +131,101 @@ describe('HTTP & WebSocket server integration', () => {
       headers: { Authorization: `Bearer ${authJson.token}` }
     });
     assert.equal(oldVerify.status, 401);
+
+    // Non-JSON Content-Type on POST /auth rejected with 415
+    const badCt = await fetch(`${baseUrl}/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: 'pin=5678'
+    });
+    assert.equal(badCt.status, 415);
+
+    // Disallowed Origin on POST /auth rejected with 403
+    const badOrigin = await fetch(`${baseUrl}/auth`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://attacker.example.com'
+      },
+      body: JSON.stringify({ pin: '5678', scope: 'admin' })
+    });
+    assert.equal(badOrigin.status, 403);
+
+    // Oversized PIN rejected with 400
+    const longPin = await fetch(`${baseUrl}/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: '1'.repeat(65), scope: 'admin' })
+    });
+    assert.equal(longPin.status, 400);
+
+    // Security headers on static HTML
+    const htmlRes = await fetch(`${baseUrl}/display.html?id=A`);
+    assert.equal(htmlRes.status, 200);
+    assert.equal(htmlRes.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(htmlRes.headers.get('referrer-policy'), 'no-referrer');
+    assert.ok(htmlRes.headers.get('content-security-policy').includes("script-src 'self'"));
+  });
+
+  it('disconnects active WebSocket clients when PIN is changed and enforces lockout on PUT /settings/pin', async () => {
+    const adminRes = await fetch(`${baseUrl}/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: '2468', scope: 'admin' })
+    }).then((r) => r.json());
+
+    const ctrlRes = await fetch(`${baseUrl}/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: '2468', scope: 'control' })
+    }).then((r) => r.json());
+
+    const wsCtrl = await connectWs(
+      `${wsBaseUrl}?role=control&token=${encodeURIComponent(ctrlRes.token)}`,
+      { Origin: 'https://ghost-booth.netlify.app' }
+    );
+    await wsCtrl.nextMessage((m) => m.t === 'status');
+
+    const closePromise = new Promise((resolve) => {
+      wsCtrl.once('close', (code) => resolve(code));
+    });
+
+    // Change PIN -> active control WS must be closed with 4003
+    const changed = await fetch(`${baseUrl}/settings/pin`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminRes.token}`
+      },
+      body: JSON.stringify({ currentPin: '2468', newPin: '9999' })
+    });
+    const changedJson = await changed.json();
+    assert.equal(changed.status, 200);
+
+    const closeCode = await closePromise;
+    assert.equal(closeCode, 4003);
+
+    // 5 failed currentPin attempts on PUT /settings/pin trigger 429 lockout
+    for (let i = 0; i < 4; i++) {
+      const r = await fetch(`${baseUrl}/settings/pin`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${changedJson.token}`
+        },
+        body: JSON.stringify({ currentPin: '0000', newPin: '1111' })
+      });
+      assert.equal(r.status, 401);
+    }
+    const locked = await fetch(`${baseUrl}/settings/pin`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${changedJson.token}`
+      },
+      body: JSON.stringify({ currentPin: '0000', newPin: '1111' })
+    });
+    assert.equal(locked.status, 429);
   });
 
   it('enforces WS origin, token scope, display role restrictions, and full play cycle', async () => {
