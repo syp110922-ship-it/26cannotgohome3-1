@@ -208,17 +208,46 @@
           </div>
         </div>
 
-        <!-- Tab 2: Video Management (wired for Phase 4) -->
+        <!-- Tab 2: Video Management (Phase 4) -->
         <div class="tab-pane hidden" id="tab-videos">
           <div class="settings-card">
             <div class="card-head-row">
-              <h3>영상 목록</h3>
+              <h3>새 영상 업로드 (MP4 · 용량 무제한)</h3>
               <span class="muted-meta" id="disk-free-label">남은 용량 확인 중</span>
             </div>
-            <div id="video-list-container" class="video-list"></div>
-            <div class="phase4-notice">
-              영상 파일 업로드·테스트 재생·복원 기능은 4단계에서 활성화됩니다. (현재 최대 파일 크기 제한 없음 / 이전 영상 3개 보관 정책 적용)
+            <div class="upload-row">
+              <input type="file" id="video-upload-input" accept="video/mp4,.mp4" />
+              <div class="settings-actions">
+                <button type="button" class="primary-btn" id="video-upload-btn">업로드 및 적용</button>
+                <button type="button" class="danger-btn hidden" id="video-upload-cancel-btn">업로드 취소</button>
+              </div>
             </div>
+            <div class="upload-progress-wrap hidden" id="video-upload-progress-wrap">
+              <div class="upload-progress-track">
+                <div class="upload-progress-fill" id="video-upload-progress-fill"></div>
+              </div>
+              <div class="muted-meta" id="video-upload-progress-text">0%</div>
+            </div>
+            <p class="error-text" id="video-upload-error"></p>
+          </div>
+
+          <div class="settings-card">
+            <div class="card-head-row">
+              <h3>보관 중인 영상 (활성 1개 + 이전 최대 3개)</h3>
+              <div class="settings-actions">
+                <button type="button" class="primary-btn small" id="booth-test-play-btn">A/B 기기 테스트 재생</button>
+                <button type="button" class="danger-btn small" id="booth-test-stop-btn">테스트 정지</button>
+              </div>
+            </div>
+            <div id="video-list-container" class="video-list"></div>
+          </div>
+
+          <div class="settings-card hidden" id="video-preview-card">
+            <div class="card-head-row">
+              <h3 id="video-preview-title">영상 미리보기</h3>
+              <button type="button" class="secondary-btn small" id="video-preview-close">닫기</button>
+            </div>
+            <video id="video-preview-player" class="video-preview-player" controls playsinline preload="metadata"></video>
           </div>
         </div>
 

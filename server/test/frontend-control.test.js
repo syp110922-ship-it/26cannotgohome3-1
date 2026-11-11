@@ -66,7 +66,18 @@ function createMockElement(id = '', tagName = 'DIV') {
         fn({ target: this, preventDefault: () => {}, pointerId: 1, pointerType: 'touch', clientX: 188, clientY: 188, ...event });
       }
     },
-    focus() {}
+    focus() {},
+    pause() {
+      this._paused = true;
+    },
+    play() {
+      this._played = true;
+      return Promise.resolve();
+    },
+    load() {},
+    removeAttribute(attr) {
+      if (attr === 'src') this.src = '';
+    }
   };
   return el;
 }
@@ -91,7 +102,11 @@ function createControlSandbox({ fetchImpl } = {}) {
     'settings-modal', 'settings-close-btn', 'fullscreen-btn', 'admin-logout-btn',
     'tab-devices', 'tab-videos', 'tab-presets', 'tab-pin', 'tab-server',
     'device-detail-grid', 'required-displays-select', 'offset-A-input', 'offset-B-input',
-    'save-device-config-btn', 'resync-btn', 'disk-free-label', 'video-list-container',
+    'save-device-config-btn', 'resync-btn', 'disk-free-label',
+    'video-upload-input', 'video-upload-btn', 'video-upload-cancel-btn',
+    'video-upload-progress-wrap', 'video-upload-progress-fill', 'video-upload-progress-text', 'video-upload-error',
+    'booth-test-play-btn', 'booth-test-stop-btn', 'video-list-container',
+    'video-preview-card', 'video-preview-title', 'video-preview-close', 'video-preview-player',
     'preset-editor-list', 'add-preset-btn', 'save-presets-btn',
     'change-pin-form', 'current-pin-input', 'new-admin-pin-input', 'new-display-pin-input',
     'new-settings-pin-input', 'change-pin-error',
@@ -103,6 +118,7 @@ function createControlSandbox({ fetchImpl } = {}) {
     'dl-A', 'dl-B', 'conn-pill', 'cooldown-label', 'toast',
     'msg-sheet-backdrop', 'msg-confirm-step', 'auth-modal', 'auth-cancel-btn',
     'control-server-modal', 'settings-modal',
+    'video-upload-cancel-btn', 'video-upload-progress-wrap', 'video-preview-card',
     'tab-videos', 'tab-presets', 'tab-pin', 'tab-server'
   ]);
 
@@ -233,6 +249,31 @@ function createControlSandbox({ fetchImpl } = {}) {
         return [];
       },
       addEventListener: () => {}
+    },
+    FormData,
+    XMLHttpRequest: class MockXHR {
+      constructor() {
+        this.upload = {};
+        this.headers = {};
+        this.status = 200;
+        this.responseText = '{"ok":true,"videos":[],"diskFreeBytes":1000}';
+      }
+      open(method, url) {
+        this.method = method;
+        this.url = url;
+      }
+      setRequestHeader(k, v) {
+        this.headers[k] = v;
+      }
+      send() {
+        if (typeof this.upload.onprogress === 'function') {
+          this.upload.onprogress({ lengthComputable: true, loaded: 100, total: 100 });
+        }
+        if (typeof this.onload === 'function') this.onload();
+      }
+      abort() {
+        if (typeof this.onabort === 'function') this.onabort();
+      }
     },
     console
   });
@@ -518,6 +559,14 @@ describe('frontend control Phase 3', () => {
       elements.get('settings-close-btn').dispatch('click');
       assert.equal(elements.get('settings-modal').classList.contains('hidden'), true);
       assert.equal(session.get('ghost_admin_token'), undefined);
+
+      // Phase 4 control markup has real upload & preview controls and no placeholder notice
+      const ctrlHtml = fs.readFileSync(path.join(FRONTEND_DIR, 'control.html'), 'utf8');
+      assert.ok(ctrlHtml.includes('id="video-upload-input"'));
+      assert.ok(ctrlHtml.includes('id="video-upload-btn"'));
+      assert.ok(ctrlHtml.includes('id="booth-test-play-btn"'));
+      assert.ok(ctrlHtml.includes('id="video-preview-player"'));
+      assert.ok(!ctrlHtml.includes('4단계에서 활성화됩니다'));
     } finally {
       cleanup();
     }

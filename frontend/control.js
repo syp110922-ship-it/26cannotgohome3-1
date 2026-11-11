@@ -73,7 +73,20 @@
   const resyncBtn = document.getElementById('resync-btn');
 
   const diskFreeLabel = document.getElementById('disk-free-label');
+  const videoUploadInput = document.getElementById('video-upload-input');
+  const videoUploadBtn = document.getElementById('video-upload-btn');
+  const videoUploadCancelBtn = document.getElementById('video-upload-cancel-btn');
+  const videoUploadProgressWrap = document.getElementById('video-upload-progress-wrap');
+  const videoUploadProgressFill = document.getElementById('video-upload-progress-fill');
+  const videoUploadProgressText = document.getElementById('video-upload-progress-text');
+  const videoUploadError = document.getElementById('video-upload-error');
+  const boothTestPlayBtn = document.getElementById('booth-test-play-btn');
+  const boothTestStopBtn = document.getElementById('booth-test-stop-btn');
   const videoListContainer = document.getElementById('video-list-container');
+  const videoPreviewCard = document.getElementById('video-preview-card');
+  const videoPreviewTitle = document.getElementById('video-preview-title');
+  const videoPreviewClose = document.getElementById('video-preview-close');
+  const videoPreviewPlayer = document.getElementById('video-preview-player');
   const presetEditorList = document.getElementById('preset-editor-list');
   const addPresetBtn = document.getElementById('add-preset-btn');
   const savePresetsBtn = document.getElementById('save-presets-btn');
@@ -108,6 +121,7 @@
   let isSettingsOpen = false;
   let isSavingSettings = false;
   let pendingControlReauth = false;
+  let activeUploadXhr = null;
   let wakeLock = null;
   let toastTimer = null;
   let settingsPollTimer = null;
@@ -817,29 +831,166 @@
     presetEditorList.appendChild(row);
   }
 
+  function closeVideoPreview() {
+    if (!videoPreviewPlayer) return;
+    try {
+      videoPreviewPlayer.pause();
+    } catch {
+      // ignore
+    }
+    videoPreviewPlayer.removeAttribute('src');
+    videoPreviewPlayer.load();
+    videoPreviewCard.classList.add('hidden');
+  }
+
+  function openVideoPreview(video) {
+    const token = getAdminToken();
+    if (!token || !video?.id) return;
+    videoPreviewTitle.textContent = `미리보기 · ${video.filename}`;
+    videoPreviewPlayer.src = `${window.GHOST_CONFIG.apiBase}/video/${encodeURIComponent(
+      video.id
+    )}?token=${encodeURIComponent(token)}`;
+    videoPreviewCard.classList.remove('hidden');
+    videoPreviewPlayer.play().catch(() => {});
+  }
+
   function renderVideoList(videos) {
     videoListContainer.textContent = '';
     if (!videos || videos.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'modal-desc';
-      empty.textContent = '등록된 영상이 없습니다.';
+      empty.textContent = '등록된 영상이 없습니다. 상단에서 MP4 파일을 업로드해 주세요.';
       videoListContainer.appendChild(empty);
       return;
     }
 
     for (const v of videos) {
       const row = document.createElement('div');
-      row.className = 'video-item';
+      row.className = `video-item${v.active ? ' active' : ''}`;
 
-      const left = document.createElement('div');
-      left.textContent = `${v.active ? '[활성] ' : ''}${v.filename} (${formatTime(v.duration)})`;
-      const right = document.createElement('div');
-      right.className = 'muted-meta';
-      right.textContent = formatBytes(v.size);
+      const info = document.createElement('div');
+      info.className = 'video-item-info';
 
-      row.appendChild(left);
-      row.appendChild(right);
+      const titleRow = document.createElement('div');
+      titleRow.className = 'video-item-title';
+
+      const badge = document.createElement('span');
+      badge.className = `video-badge ${v.active ? 'active' : 'archived'}`;
+      badge.textContent = v.active ? '활성' : '보관';
+
+      const nameEl = document.createElement('span');
+      nameEl.textContent = v.filename;
+
+      titleRow.appendChild(badge);
+      titleRow.appendChild(nameEl);
+
+      const meta = document.createElement('div');
+      meta.className = 'muted-meta';
+      const uploadedAt = v.uploadedAt
+        ? new Date(v.uploadedAt).toLocaleString('ko-KR', {
+            month: 'numeric',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })
+        : '';
+      meta.textContent = `${formatTime(v.duration)} · ${formatBytes(v.size)}${
+        uploadedAt ? ` · ${uploadedAt}` : ''
+      }`;
+
+      info.appendChild(titleRow);
+      info.appendChild(meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'video-item-actions';
+
+      const previewBtn = document.createElement('button');
+      previewBtn.type = 'button';
+      previewBtn.className = 'secondary-btn small';
+      previewBtn.textContent = '미리보기';
+      previewBtn.addEventListener('click', () => openVideoPreview(v));
+      actions.appendChild(previewBtn);
+
+      if (!v.active) {
+        const activateBtn = document.createElement('button');
+        activateBtn.type = 'button';
+        activateBtn.className = 'primary-btn small';
+        activateBtn.textContent = '적용';
+        activateBtn.addEventListener('click', () => handleActivateVideo(v.id));
+        actions.appendChild(activateBtn);
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'danger-btn small';
+        delBtn.textContent = '삭제';
+        delBtn.addEventListener('click', () => handleDeleteVideo(v.id, v.filename));
+        actions.appendChild(delBtn);
+      }
+
+      row.appendChild(info);
+      row.appendChild(actions);
       videoListContainer.appendChild(row);
+    }
+  }
+
+  async function refreshVideosList() {
+    const token = getAdminToken();
+    if (!token) return;
+    try {
+      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/videos`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.ok) {
+        diskFreeLabel.textContent = `디스크 여유: ${formatBytes(data.diskFreeBytes)}`;
+        renderVideoList(data.videos || []);
+      }
+    } catch {
+      // ignore transient refresh failure
+    }
+  }
+
+  async function handleActivateVideo(videoId) {
+    try {
+      const res = await fetch(
+        `${window.GHOST_CONFIG.apiBase}/videos/${encodeURIComponent(videoId)}/activate`,
+        {
+          method: 'POST',
+          headers: getAdminHeaders()
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showToast(`영상 적용 실패: ${data.reason || data.error || '상태를 확인하세요'}`);
+        return;
+      }
+      renderVideoList(data.videos || []);
+      showToast('선택한 영상을 활성 영상으로 전환했습니다. 기기들이 자동 동기화합니다.');
+    } catch {
+      showToast('서버 통신 오류');
+    }
+  }
+
+  async function handleDeleteVideo(videoId, filename) {
+    try {
+      const res = await fetch(
+        `${window.GHOST_CONFIG.apiBase}/video/${encodeURIComponent(videoId)}`,
+        {
+          method: 'DELETE',
+          headers: getAdminHeaders()
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showToast(`삭제 실패: ${data.error || '오류'}`);
+        return;
+      }
+      diskFreeLabel.textContent = `디스크 여유: ${formatBytes(data.diskFreeBytes)}`;
+      renderVideoList(data.videos || []);
+      showToast(`'${filename}' 영상을 삭제했습니다.`);
+    } catch {
+      showToast('서버 통신 오류');
     }
   }
 
@@ -917,7 +1068,20 @@
     startSettingsPolling();
   }
 
-  function closeSettingsModal() {
+  function closeSettingsModal(force = false) {
+    if (activeUploadXhr && !force) {
+      showToast('영상 업로드 중에는 설정창을 닫을 수 없습니다.');
+      return;
+    }
+    if (activeUploadXhr) {
+      try {
+        activeUploadXhr.abort();
+      } catch {
+        // ignore
+      }
+      activeUploadXhr = null;
+    }
+    closeVideoPreview();
     if (settingsPollTimer) {
       clearInterval(settingsPollTimer);
       settingsPollTimer = null;
@@ -931,7 +1095,7 @@
     }
   }
 
-  settingsCloseBtn.addEventListener('click', closeSettingsModal);
+  settingsCloseBtn.addEventListener('click', () => closeSettingsModal(false));
 
   for (const btn of tabBtns) {
     btn.addEventListener('click', () => {
@@ -939,6 +1103,9 @@
       for (const b of tabBtns) b.classList.toggle('active', b === btn);
       for (const pane of document.querySelectorAll('.tab-pane')) {
         pane.classList.toggle('hidden', pane.id !== `tab-${target}`);
+      }
+      if (target === 'videos') {
+        refreshVideosList();
       }
     });
   }
@@ -955,8 +1122,136 @@
   });
 
   adminLogoutBtn.addEventListener('click', () => {
-    closeSettingsModal();
+    closeSettingsModal(true);
     showToast('설정이 잠금되었습니다.');
+  });
+
+  videoPreviewClose.addEventListener('click', closeVideoPreview);
+
+  boothTestPlayBtn.addEventListener('click', async () => {
+    try {
+      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/test-play`, {
+        method: 'POST',
+        headers: getAdminHeaders()
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showToast(`테스트 재생 불가: ${data.reason || '연결/캐시 상태를 확인하세요'}`);
+        return;
+      }
+      showToast('연결된 체험자 기기에서 테스트 재생을 시작합니다.');
+    } catch {
+      showToast('서버 통신 오류');
+    }
+  });
+
+  boothTestStopBtn.addEventListener('click', async () => {
+    try {
+      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/test-stop`, {
+        method: 'POST',
+        headers: getAdminHeaders()
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showToast('현재 재생 중이 아닙니다.');
+        return;
+      }
+      showToast('테스트 재생을 정지했습니다.');
+    } catch {
+      showToast('서버 통신 오류');
+    }
+  });
+
+  function setUploadUiState(isUploading, pct = 0, label = '') {
+    videoUploadBtn.disabled = isUploading;
+    videoUploadInput.disabled = isUploading;
+    videoUploadCancelBtn.classList.toggle('hidden', !isUploading);
+    videoUploadProgressWrap.classList.toggle('hidden', !isUploading && pct === 0);
+    videoUploadProgressFill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+    if (label) videoUploadProgressText.textContent = label;
+  }
+
+  videoUploadCancelBtn.addEventListener('click', () => {
+    if (activeUploadXhr) {
+      activeUploadXhr.abort();
+      activeUploadXhr = null;
+      setUploadUiState(false, 0, '');
+      videoUploadError.textContent = '업로드가 취소되었습니다.';
+    }
+  });
+
+  videoUploadBtn.addEventListener('click', () => {
+    videoUploadError.textContent = '';
+    const file = videoUploadInput.files?.[0];
+    if (!file) {
+      videoUploadError.textContent = '업로드할 MP4 파일을 먼저 선택해 주세요.';
+      return;
+    }
+    const token = getAdminToken();
+    if (!token) {
+      videoUploadError.textContent = '설정 인증이 만료되었습니다.';
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('video', file, file.name || 'video.mp4');
+
+    const xhr = new XMLHttpRequest();
+    activeUploadXhr = xhr;
+    setUploadUiState(true, 0, `0% · 0 MB / ${formatBytes(file.size)}`);
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const pct = Math.min(100, Math.round((event.loaded / event.total) * 100));
+      const label =
+        pct >= 100
+          ? `100% · 서버 MP4 검사 및 저장 중...`
+          : `${pct}% · ${formatBytes(event.loaded)} / ${formatBytes(event.total)}`;
+      setUploadUiState(true, pct, label);
+    };
+
+    xhr.onload = () => {
+      activeUploadXhr = null;
+      setUploadUiState(false, 0, '');
+      let data = {};
+      try {
+        data = JSON.parse(xhr.responseText || '{}');
+      } catch {
+        data = {};
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && data.ok) {
+        videoUploadInput.value = '';
+        diskFreeLabel.textContent = `디스크 여유: ${formatBytes(data.diskFreeBytes)}`;
+        renderVideoList(data.videos || []);
+        showToast('영상 업로드 및 적용 완료! A/B 기기로 자동 배포됩니다.');
+        return;
+      }
+
+      const errMap = {
+        invalid_mp4_header: '유효한 MP4(H.264/AAC) 파일이 아닙니다.',
+        missing_moov_box: 'MP4 메타데이터(moov)가 손상되었거나 없습니다.',
+        missing_media_track: '영상/오디오 트랙을 찾을 수 없습니다.',
+        invalid_mp4_duration: 'MP4 재생 길이를 확인할 수 없습니다.',
+        insufficient_disk_space: '서버 디스크 여유 공간이 부족합니다.',
+        busy_cannot_upload: '재생 중이거나 다른 업로드가 진행 중입니다.'
+      };
+      videoUploadError.textContent = errMap[data.error] || `업로드 실패 (${data.error || xhr.status})`;
+    };
+
+    xhr.onerror = () => {
+      activeUploadXhr = null;
+      setUploadUiState(false, 0, '');
+      videoUploadError.textContent = '네트워크 오류로 업로드에 실패했습니다.';
+    };
+
+    xhr.onabort = () => {
+      activeUploadXhr = null;
+      setUploadUiState(false, 0, '');
+    };
+
+    xhr.open('POST', `${window.GHOST_CONFIG.apiBase}/upload`);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.send(formData);
   });
 
   saveDeviceConfigBtn.addEventListener('click', async () => {

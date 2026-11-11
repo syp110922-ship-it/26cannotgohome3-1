@@ -3,11 +3,29 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { WebSocket } = require('ws');
 const { createApp } = require('../src/index');
 const { startDisplayPreview } = require('../src/display-preview');
+
+function buildTestMp4Buffer({ durationSec = 10, mdatBytes = 2048 } = {}) {
+  const makeBox = (type, payload) => {
+    const h = Buffer.alloc(8);
+    h.writeUInt32BE(8 + payload.length, 0);
+    h.write(type, 4, 4, 'ascii');
+    return Buffer.concat([h, payload]);
+  };
+  const ftyp = makeBox('ftyp', Buffer.from('isom\x00\x00\x02\x00isomiso2', 'latin1'));
+  const mvhd = Buffer.alloc(100);
+  mvhd[0] = 0;
+  mvhd.writeUInt32BE(1000, 12);
+  mvhd.writeUInt32BE(Math.round(durationSec * 1000), 16);
+  const moov = makeBox('moov', Buffer.concat([makeBox('mvhd', mvhd), makeBox('trak', Buffer.alloc(16))]));
+  const mdat = makeBox('mdat', crypto.randomBytes(mdatBytes));
+  return Buffer.concat([ftyp, moov, mdat]);
+}
 
 function connectWs(url, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -528,5 +546,175 @@ describe('HTTP & WebSocket server integration', () => {
     } finally {
       await preview.close();
     }
+  });
+
+  it('streams MP4 uploads, enforces Range downloads, keeps 1+3 archive retention, and supports activate/delete/test-play', async () => {
+    const adminAuth = await fetch(`${baseUrl}/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: 'adminsetmg', scope: 'admin' })
+    }).then((r) => r.json());
+
+    const ctrlAuth = await fetch(`${baseUrl}/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: 'admincgo2631', scope: 'control' })
+    }).then((r) => r.json());
+
+    const dispAuth = await fetch(`${baseUrl}/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: 'cgo2631', scope: 'display', deviceId: 'A' })
+    }).then((r) => r.json());
+
+    const wsA = await connectWs(
+      `${wsBaseUrl}?role=display&id=A&token=${encodeURIComponent(dispAuth.token)}`,
+      { Origin: 'https://ghost-booth.netlify.app' }
+    );
+    await wsA.nextMessage((m) => m.t === 'video');
+
+    const uploadBuffer = async (token, filename, buf) => {
+      const form = new FormData();
+      form.append('video', new Blob([buf], { type: 'video/mp4' }), filename);
+      const res = await fetch(`${baseUrl}/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form
+      });
+      return { status: res.status, data: await res.json() };
+    };
+
+    // Control scope cannot upload
+    const validBuf1 = buildTestMp4Buffer({ durationSec: 15, mdatBytes: 4096 });
+    const forbidden = await uploadBuffer(ctrlAuth.token, 'v1.mp4', validBuf1);
+    assert.equal(forbidden.status, 403);
+
+    // Fake file rejected cleanly without leaving temp files on disk
+    const fake = await uploadBuffer(adminAuth.token, 'fake.mp4', Buffer.from('\x89PNGFAKEFILEBODY1234567890'));
+    assert.equal(fake.status, 400);
+    assert.equal(fake.data.error, 'invalid_mp4_header');
+    assert.equal(
+      fs.readdirSync(app.config.videosDir).some((f) => f.startsWith('.tmp-')),
+      false
+    );
+
+    // Upload 5 valid MP4s -> keeps 1 active + 3 archived = 4 on DB and disk
+    const uploadedIds = [];
+    let lastBuf;
+    for (let i = 1; i <= 5; i++) {
+      const buf = buildTestMp4Buffer({ durationSec: 10 + i, mdatBytes: 1024 + i * 64 });
+      lastBuf = buf;
+      const r = await uploadBuffer(adminAuth.token, `haunt-${i}.mp4`, buf);
+      assert.equal(r.status, 200);
+      assert.equal(r.data.ok, true);
+      assert.equal(r.data.video.duration, 10 + i);
+      assert.equal(
+        r.data.video.sha256,
+        crypto.createHash('sha256').update(buf).digest('hex')
+      );
+      uploadedIds.push(r.data.video.id);
+
+      const pushed = await wsA.nextMessage((m) => m.t === 'video' && m.videoId === r.data.video.id);
+      assert.equal(pushed.size, buf.length);
+    }
+
+    const listRes = await fetch(`${baseUrl}/videos`, {
+      headers: { Authorization: `Bearer ${adminAuth.token}` }
+    }).then((r) => r.json());
+    assert.equal(listRes.videos.length, 4);
+    assert.equal(listRes.videos.some((v) => v.id === uploadedIds[0]), false);
+    assert.equal(fs.existsSync(path.join(app.config.videosDir, `${uploadedIds[0]}.mp4`)), false);
+    assert.equal(fs.existsSync(path.join(app.config.videosDir, `${uploadedIds[4]}.mp4`)), true);
+
+    // HEAD + full GET + HTTP 206 Range streaming + 416 out-of-bounds
+    const activeId = uploadedIds[4];
+    const headRes = await fetch(`${baseUrl}/video/${activeId}`, {
+      method: 'HEAD',
+      headers: { Authorization: `Bearer ${dispAuth.token}` }
+    });
+    assert.equal(headRes.status, 200);
+    assert.equal(headRes.headers.get('accept-ranges'), 'bytes');
+    assert.equal(Number(headRes.headers.get('content-length')), lastBuf.length);
+
+    const range1 = await fetch(`${baseUrl}/video/${activeId}`, {
+      headers: {
+        Authorization: `Bearer ${dispAuth.token}`,
+        Range: 'bytes=0-63'
+      }
+    });
+    assert.equal(range1.status, 206);
+    assert.equal(range1.headers.get('content-range'), `bytes 0-63/${lastBuf.length}`);
+    const part1 = Buffer.from(await range1.arrayBuffer());
+    assert.equal(Buffer.compare(part1, lastBuf.subarray(0, 64)), 0);
+
+    const rangeTail = await fetch(`${baseUrl}/video/${activeId}`, {
+      headers: {
+        Authorization: `Bearer ${dispAuth.token}`,
+        Range: `bytes=64-`
+      }
+    });
+    assert.equal(rangeTail.status, 206);
+    const part2 = Buffer.from(await rangeTail.arrayBuffer());
+    assert.equal(Buffer.compare(part2, lastBuf.subarray(64)), 0);
+
+    const badRange = await fetch(`${baseUrl}/video/${activeId}`, {
+      headers: {
+        Authorization: `Bearer ${dispAuth.token}`,
+        Range: `bytes=${lastBuf.length + 100}-`
+      }
+    });
+    assert.equal(badRange.status, 416);
+
+    // Test play works even with single display A cached
+    wsA.send(JSON.stringify({ t: 'state', id: 'A', cached: [activeId], dl: 100 }));
+    await new Promise((r) => setTimeout(r, 40));
+    const testPlay = await fetch(`${baseUrl}/test-play`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminAuth.token}` }
+    });
+    assert.equal(testPlay.status, 200);
+    const playMsg = await wsA.nextMessage((m) => m.t === 'play');
+    assert.equal(playMsg.videoId, activeId);
+
+    const testStop = await fetch(`${baseUrl}/test-stop`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminAuth.token}` }
+    });
+    assert.equal(testStop.status, 200);
+    await wsA.nextMessage((m) => m.t === 'stop');
+
+    // Wait cooldown clear (test app cooldown defaults 3000ms? Let's delete active check first while cooldown or stop!)
+    // Active video cannot be deleted
+    const delActive = await fetch(`${baseUrl}/video/${activeId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${adminAuth.token}` }
+    });
+    assert.equal(delActive.status, 409);
+
+    // Archived video can be deleted from DB and disk
+    const archivedId = uploadedIds[1];
+    const delArchived = await fetch(`${baseUrl}/video/${archivedId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${adminAuth.token}` }
+    });
+    assert.equal(delArchived.status, 200);
+    assert.equal(fs.existsSync(path.join(app.config.videosDir, `${archivedId}.mp4`)), false);
+
+    // Wait past 60ms cooldown and restore an archived video -> pushes updated video to displays
+    await new Promise((r) => setTimeout(r, 100));
+    const restoreId = uploadedIds[2];
+    const restoreRes = await fetch(`${baseUrl}/videos/${restoreId}/activate`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminAuth.token}` }
+    });
+    assert.equal(restoreRes.status, 200);
+    const restoreJson = await restoreRes.json();
+    assert.equal(restoreJson.video.id, restoreId);
+    assert.equal(restoreJson.video.active, true);
+
+    const restoredPush = await wsA.nextMessage((m) => m.t === 'video' && m.videoId === restoreId);
+    assert.equal(restoredPush.videoId, restoreId);
+
+    wsA.close();
   });
 });

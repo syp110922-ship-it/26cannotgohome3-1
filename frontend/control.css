@@ -824,19 +824,91 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px;
   border-radius: 10px;
   background: #0b0c10;
   border: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 13px;
 }
 
-.phase4-notice {
-  padding: 10px 12px;
+.video-item.active {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.video-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.video-item-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.video-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.video-badge.active {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+
+.video-badge.archived {
+  background: rgba(156, 163, 175, 0.18);
+  color: #d1d5db;
+}
+
+.video-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.upload-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.upload-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.upload-progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.upload-progress-fill {
+  width: 0%;
+  height: 100%;
+  background: var(--green);
+  transition: width 0.15s linear;
+}
+
+.video-preview-player {
+  width: 100%;
+  max-height: 280px;
   border-radius: 10px;
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  color: #fde68a;
-  font-size: 12px;
-  line-height: 1.45;
+  background: #000000;
 }

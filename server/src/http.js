@@ -3,6 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
+const crypto = require('node:crypto');
+const Busboy = require('busboy');
 const {
   MAX_PIN_LENGTH,
   verifyPin,
@@ -12,6 +14,53 @@ const {
   IpRateLimiter
 } = require('./auth');
 const { isOriginAllowed } = require('./ws');
+const { hasValidFtypHeader, inspectUploadedMp4 } = require('./mp4');
+
+const SAFE_VIDEO_ID_RE = /^[a-zA-Z0-9_-]{4,64}$/;
+
+function safeUnlink(targetPath) {
+  try {
+    if (targetPath && fs.existsSync(targetPath)) {
+      fs.unlinkSync(targetPath);
+    }
+  } catch {
+    // ignore cleanup error
+  }
+}
+
+function sanitizeFilename(rawName) {
+  const base = path.basename(String(rawName || 'video.mp4')).replace(/[\r\n\0/\\]/g, '_').trim();
+  const clean = base.slice(0, 160);
+  return clean || 'video.mp4';
+}
+
+function parseByteRange(rangeHeader, totalSize) {
+  if (typeof rangeHeader !== 'string') return null;
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim());
+  if (!match) return { invalid: true };
+  const [, rawStart, rawEnd] = match;
+  if (!rawStart && !rawEnd) return { invalid: true };
+
+  if (totalSize === 0) return { invalid: true };
+
+  let start;
+  let end;
+  if (!rawStart) {
+    // Suffix byte range: bytes=-N
+    const suffixLen = Number(rawEnd);
+    if (!Number.isSafeInteger(suffixLen) || suffixLen <= 0) return { invalid: true };
+    start = Math.max(0, totalSize - suffixLen);
+    end = totalSize - 1;
+  } else {
+    start = Number(rawStart);
+    end = rawEnd ? Number(rawEnd) : totalSize - 1;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return { invalid: true };
+    if (start < 0 || start >= totalSize || end < start) return { invalid: true };
+    end = Math.min(end, totalSize - 1);
+  }
+
+  return { invalid: false, start, end };
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -136,8 +185,12 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
     }
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, HEAD');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Range');
+    res.setHeader(
+      'Access-Control-Expose-Headers',
+      'Content-Length, Content-Range, Accept-Ranges, ETag'
+    );
   }
 
   function rejectDisallowedCrossOriginMutation(req, res) {
@@ -587,7 +640,7 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
         return;
       }
 
-      // Video management routes (scaffolded for Phase 4)
+      // Video management routes (Phase 4)
       if (req.method === 'GET' && pathname === '/videos') {
         const claims = requireAuth(req, res, url, ['admin']);
         if (!claims) return;
@@ -603,10 +656,202 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
       if (req.method === 'POST' && pathname === '/upload') {
         const claims = requireAuth(req, res, url, ['admin']);
         if (!claims) return;
-        sendJson(res, 501, {
-          ok: false,
-          error: 'not_implemented_phase4',
-          message: 'Streaming video upload will be implemented in Phase 4'
+
+        if (
+          sm.isUploading() ||
+          sm.getState() === 'PLAYING' ||
+          sm.getState() === 'COOLDOWN'
+        ) {
+          sendJson(res, 409, { ok: false, error: 'busy_cannot_upload' });
+          return;
+        }
+
+        const ct = String(req.headers['content-type'] || '').toLowerCase();
+        if (!ct.includes('multipart/form-data')) {
+          sendJson(res, 415, { ok: false, error: 'multipart_required' });
+          return;
+        }
+
+        const freeBefore = getDiskFreeBytes(config.videosDir);
+        if (typeof freeBefore === 'number' && freeBefore < config.minDiskFreeBytes) {
+          sendJson(res, 507, {
+            ok: false,
+            error: 'insufficient_disk_space',
+            diskFreeBytes: freeBefore
+          });
+          return;
+        }
+
+        const contentLenHeader = Number(req.headers['content-length']);
+        if (
+          Number.isFinite(contentLenHeader) &&
+          contentLenHeader > 0 &&
+          typeof freeBefore === 'number' &&
+          freeBefore - contentLenHeader < config.minDiskFreeBytes
+        ) {
+          sendJson(res, 507, {
+            ok: false,
+            error: 'insufficient_disk_space',
+            diskFreeBytes: freeBefore
+          });
+          return;
+        }
+
+        const videoId = `vid_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+        const tmpPath = path.join(config.videosDir, `.tmp-${videoId}.mp4`);
+        const finalPath = path.join(config.videosDir, `${videoId}.mp4`);
+
+        fs.mkdirSync(config.videosDir, { recursive: true });
+        sm.setUploading(true);
+
+        await new Promise((resolve) => {
+          let settled = false;
+          let fileSeen = false;
+          let fileStream = null;
+          let cleanFilename = 'video.mp4';
+          let totalBytes = 0;
+          let headerChecked = false;
+          let headBuf = Buffer.alloc(0);
+          let bytesSinceDiskCheck = 0;
+          const hash = crypto.createHash('sha256');
+          let bb;
+
+          const finishError = (statusCode, errorCode) => {
+            if (settled) return;
+            settled = true;
+            if (fileStream) {
+              try {
+                fileStream.destroy();
+              } catch {
+                // ignore
+              }
+            }
+            req.unpipe(bb);
+            safeUnlink(tmpPath);
+            sm.setUploading(false);
+            if (!res.headersSent) {
+              sendJson(res, statusCode, { ok: false, error: errorCode });
+            }
+            resolve();
+          };
+
+          try {
+            bb = Busboy({ headers: req.headers, limits: { files: 1 } });
+          } catch {
+            finishError(400, 'invalid_multipart_header');
+            return;
+          }
+
+          req.on('aborted', () => finishError(499, 'upload_aborted'));
+          req.on('error', () => finishError(400, 'request_stream_error'));
+          bb.on('error', () => finishError(400, 'multipart_parse_error'));
+
+          bb.on('file', (_fieldname, stream, info) => {
+            if (fileSeen) {
+              stream.resume();
+              return;
+            }
+            fileSeen = true;
+            cleanFilename = sanitizeFilename(info?.filename);
+            fileStream = fs.createWriteStream(tmpPath);
+
+            fileStream.on('error', () => finishError(500, 'disk_write_error'));
+
+            stream.on('data', (chunk) => {
+              if (settled) return;
+              totalBytes += chunk.length;
+              bytesSinceDiskCheck += chunk.length;
+              hash.update(chunk);
+
+              if (!headerChecked) {
+                const combined = Buffer.concat([headBuf, chunk]);
+                headBuf = combined.subarray(0, 64);
+                if (headBuf.length >= 12) {
+                  headerChecked = true;
+                  if (!hasValidFtypHeader(headBuf)) {
+                    stream.destroy();
+                    finishError(400, 'invalid_mp4_header');
+                    return;
+                  }
+                }
+              }
+
+              if (bytesSinceDiskCheck >= 16 * 1024 * 1024) {
+                bytesSinceDiskCheck = 0;
+                const freeNow = getDiskFreeBytes(config.videosDir);
+                if (typeof freeNow === 'number' && freeNow < config.minDiskFreeBytes) {
+                  stream.destroy();
+                  finishError(507, 'insufficient_disk_space');
+                  return;
+                }
+              }
+
+              const canContinue = fileStream.write(chunk);
+              if (!canContinue) {
+                stream.pause();
+                fileStream.once('drain', () => {
+                  if (!settled) stream.resume();
+                });
+              }
+            });
+
+            stream.on('end', () => {
+              if (settled) return;
+              if (!headerChecked && !hasValidFtypHeader(headBuf)) {
+                finishError(400, 'invalid_mp4_header');
+                return;
+              }
+              fileStream.end(async () => {
+                if (settled) return;
+                try {
+                  const inspection = await inspectUploadedMp4(tmpPath);
+                  if (!inspection.valid) {
+                    finishError(400, inspection.reason || 'invalid_mp4');
+                    return;
+                  }
+                  const sha256 = hash.digest('hex');
+                  fs.renameSync(tmpPath, finalPath);
+                  const video = db.insertVideo({
+                    id: videoId,
+                    filename: cleanFilename,
+                    size: totalBytes,
+                    duration: inspection.duration,
+                    sha256,
+                    active: true
+                  });
+
+                  const expired = db.getVideosBeyondRetention(config.archiveRetention);
+                  for (const old of expired) {
+                    db.deleteVideo(old.id);
+                    safeUnlink(path.join(config.videosDir, `${old.id}.mp4`));
+                  }
+
+                  settled = true;
+                  sm.setUploading(false);
+                  sm.activateVideo(videoId);
+                  sendJson(res, 200, {
+                    ok: true,
+                    video,
+                    videos: db.listVideos(),
+                    diskFreeBytes: getDiskFreeBytes(config.videosDir)
+                  });
+                  resolve();
+                } catch {
+                  finishError(500, 'video_finalize_error');
+                }
+              });
+            });
+
+            stream.on('error', () => finishError(400, 'upload_stream_error'));
+          });
+
+          bb.on('close', () => {
+            if (!fileSeen && !settled) {
+              finishError(400, 'missing_video_file');
+            }
+          });
+
+          req.pipe(bb);
         });
         return;
       }
@@ -617,21 +862,98 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
       ) {
         const claims = requireAuth(req, res, url, ['admin', 'control', 'display']);
         if (!claims) return;
-        sendJson(res, 501, {
-          ok: false,
-          error: 'not_implemented_phase4',
-          message: 'Range video streaming will be implemented in Phase 4'
+
+        const videoId = pathname.slice('/video/'.length);
+        if (!SAFE_VIDEO_ID_RE.test(videoId)) {
+          sendJson(res, 400, { ok: false, error: 'invalid_video_id' });
+          return;
+        }
+        const video = db.getVideoById(videoId);
+        const filePath = path.join(config.videosDir, `${videoId}.mp4`);
+        if (!video || !fs.existsSync(filePath)) {
+          sendJson(res, 404, { ok: false, error: 'video_not_found' });
+          return;
+        }
+
+        const stat = fs.statSync(filePath);
+        const totalSize = stat.size;
+        const baseHeaders = {
+          'Content-Type': 'video/mp4',
+          'Accept-Ranges': 'bytes',
+          ETag: `"${video.sha256}"`,
+          'Cache-Control': 'private, max-age=86400',
+          'X-Content-Type-Options': 'nosniff'
+        };
+
+        if (req.method === 'HEAD') {
+          res.writeHead(200, {
+            ...baseHeaders,
+            'Content-Length': totalSize
+          });
+          res.end();
+          return;
+        }
+
+        if (req.headers.range) {
+          const parsed = parseByteRange(req.headers.range, totalSize);
+          if (!parsed || parsed.invalid) {
+            res.writeHead(416, {
+              ...baseHeaders,
+              'Content-Range': `bytes */${totalSize}`
+            });
+            res.end();
+            return;
+          }
+
+          const { start, end } = parsed;
+          res.writeHead(206, {
+            ...baseHeaders,
+            'Content-Range': `bytes ${start}-${end}/${totalSize}`,
+            'Content-Length': end - start + 1
+          });
+          const stream = fs.createReadStream(filePath, { start, end });
+          res.on('close', () => stream.destroy());
+          stream.on('error', () => res.destroy());
+          stream.pipe(res);
+          return;
+        }
+
+        res.writeHead(200, {
+          ...baseHeaders,
+          'Content-Length': totalSize
         });
+        const stream = fs.createReadStream(filePath);
+        res.on('close', () => stream.destroy());
+        stream.on('error', () => res.destroy());
+        stream.pipe(res);
         return;
       }
 
       if (req.method === 'DELETE' && pathname.startsWith('/video/')) {
         const claims = requireAuth(req, res, url, ['admin']);
         if (!claims) return;
-        sendJson(res, 501, {
-          ok: false,
-          error: 'not_implemented_phase4',
-          message: 'Video deletion will be implemented in Phase 4'
+
+        const videoId = pathname.slice('/video/'.length);
+        if (!SAFE_VIDEO_ID_RE.test(videoId)) {
+          sendJson(res, 400, { ok: false, error: 'invalid_video_id' });
+          return;
+        }
+        const video = db.getVideoById(videoId);
+        if (!video) {
+          sendJson(res, 404, { ok: false, error: 'video_not_found' });
+          return;
+        }
+        if (video.active) {
+          sendJson(res, 409, { ok: false, error: 'cannot_delete_active_video' });
+          return;
+        }
+
+        db.deleteVideo(videoId);
+        safeUnlink(path.join(config.videosDir, `${videoId}.mp4`));
+        sendJson(res, 200, {
+          ok: true,
+          videos: db.listVideos(),
+          diskFreeBytes: getDiskFreeBytes(config.videosDir)
         });
         return;
       }
@@ -639,11 +961,43 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
       if (req.method === 'POST' && /^\/videos\/[^/]+\/activate$/.test(pathname)) {
         const claims = requireAuth(req, res, url, ['admin']);
         if (!claims) return;
-        sendJson(res, 501, {
-          ok: false,
-          error: 'not_implemented_phase4',
-          message: 'Video activation will be wired with Phase 4 upload'
+
+        const videoId = pathname.split('/')[2];
+        if (!SAFE_VIDEO_ID_RE.test(videoId)) {
+          sendJson(res, 400, { ok: false, error: 'invalid_video_id' });
+          return;
+        }
+        const filePath = path.join(config.videosDir, `${videoId}.mp4`);
+        if (!fs.existsSync(filePath)) {
+          sendJson(res, 404, { ok: false, error: 'video_file_missing' });
+          return;
+        }
+        const result = sm.activateVideo(videoId);
+        if (!result.ok) {
+          sendJson(res, result.reason === 'video_not_found' ? 404 : 409, result);
+          return;
+        }
+        sendJson(res, 200, {
+          ok: true,
+          video: result.video,
+          videos: db.listVideos()
         });
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/test-play') {
+        const claims = requireAuth(req, res, url, ['admin']);
+        if (!claims) return;
+        const result = sm.requestPlay({ allowPartial: true });
+        sendJson(res, result.ok ? 200 : 409, result);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/test-stop') {
+        const claims = requireAuth(req, res, url, ['admin']);
+        if (!claims) return;
+        const result = sm.requestStop();
+        sendJson(res, result.ok ? 200 : 409, result);
         return;
       }
 

@@ -467,6 +467,9 @@ describe('frontend config, ws-client, and display Phase 2', () => {
       infoTabs.server.dispatch('click');
       assert.equal(elements.get('info-pane-server').classList.contains('hidden'), false);
       assert.equal(elements.get('info-server-url').textContent, 'http://localhost:3000');
+
+      const dispHtml = fs.readFileSync(path.join(FRONTEND_DIR, 'display.html'), 'utf8');
+      assert.ok(dispHtml.includes('./shared/video-cache.js'));
     } finally {
       cleanup();
     }

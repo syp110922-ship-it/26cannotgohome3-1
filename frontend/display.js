@@ -91,6 +91,8 @@
   let activeVideoMeta = null;
   let loadedVideoId = null;
   let loadedObjectUrl = null;
+  let activeDownloadSeq = 0;
+  let activeDownloadAbort = null;
   let isPlaying = false;
   let currentPlayingVideoId = null;
 
@@ -206,6 +208,17 @@
   }
 
   async function prepareVideoSource(meta, forceResync = false) {
+    activeDownloadSeq += 1;
+    const mySeq = activeDownloadSeq;
+    if (activeDownloadAbort) {
+      try {
+        activeDownloadAbort.abort();
+      } catch {
+        // ignore
+      }
+      activeDownloadAbort = null;
+    }
+
     if (!meta || !meta.videoId) {
       resetToBlackStandby();
       if (loadedObjectUrl && loadedObjectUrl.startsWith('blob:')) {
@@ -225,13 +238,17 @@
     }
 
     if (window.GhostVideoCache && typeof window.GhostVideoCache.ensureCached === 'function') {
+      const abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      activeDownloadAbort = abortController;
       try {
         const blobUrl = await window.GhostVideoCache.ensureCached({
           meta,
           apiBase: window.GHOST_CONFIG.apiBase,
           getToken: () => window.localStorage.getItem(TOKEN_KEY) || '',
           forceResync,
+          signal: abortController ? abortController.signal : undefined,
           onProgress: (dl) => {
+            if (mySeq !== activeDownloadSeq) return;
             client.send({
               t: 'state',
               id: deviceId,
@@ -241,9 +258,20 @@
             });
           }
         });
+        if (mySeq !== activeDownloadSeq) {
+          if (blobUrl && blobUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(blobUrl);
+          }
+          return;
+        }
+        activeDownloadAbort = null;
         attachPlayableUrl(meta.videoId, blobUrl);
         return;
       } catch (err) {
+        if (mySeq !== activeDownloadSeq || err?.name === 'AbortError') {
+          return;
+        }
+        activeDownloadAbort = null;
         reportDeviceState({
           cached: [],
           dl: 0,

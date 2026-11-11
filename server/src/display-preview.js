@@ -45,7 +45,9 @@ const API_PATH_PREFIXES = [
   '/upload',
   '/play',
   '/stop',
-  '/resync'
+  '/resync',
+  '/test-play',
+  '/test-stop'
 ];
 
 function isApiPath(pathname) {

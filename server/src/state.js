@@ -296,9 +296,19 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     checkPlaybackCompletion();
   }
 
-  function requestPlay() {
+  function requestPlay({ allowPartial = false } = {}) {
     recomputeState();
-    if (state !== STATES.READY || !activeVideo) {
+    const readyDisplays = ['A', 'B'].filter(
+      (id) => displays[id].connected && activeVideo && isDisplayReadyForVideo(displays[id], activeVideo)
+    );
+    const canStart =
+      !uploading &&
+      activeVideo &&
+      state !== STATES.PLAYING &&
+      state !== STATES.COOLDOWN &&
+      (state === STATES.READY || (allowPartial && readyDisplays.length > 0));
+
+    if (!canStart) {
       return {
         ok: false,
         reason: state === STATES.PLAYING ? 'already_playing' : 'not_ready',
@@ -310,9 +320,7 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     const startAt = now + config.playScheduleLeadMs;
     const playLogId = db.startPlayLog(activeVideo.id, startAt);
 
-    const startedDisplays = new Set(
-      ['A', 'B'].filter((id) => displays[id].connected && isDisplayReadyForVideo(displays[id], activeVideo))
-    );
+    const startedDisplays = new Set(readyDisplays);
 
     playback = {
       videoId: activeVideo.id,
@@ -407,7 +415,7 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
   }
 
   function activateVideo(videoId) {
-    if (state === STATES.PLAYING || state === STATES.COOLDOWN) {
+    if (uploading || state === STATES.PLAYING || state === STATES.COOLDOWN) {
       return { ok: false, reason: 'cannot_activate_while_playing', state };
     }
     const updated = db.activateVideo(videoId);
@@ -448,7 +456,7 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
   }
 
   function triggerResync() {
-    if (state === STATES.PLAYING || state === STATES.COOLDOWN) {
+    if (uploading || state === STATES.PLAYING || state === STATES.COOLDOWN) {
       return { ok: false, reason: 'cannot_resync_while_playing', state };
     }
     if (!activeVideo) {
@@ -532,6 +540,7 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     requestStop,
     sendMessage,
     activateVideo,
+    isUploading: () => uploading,
     setUploading,
     setRequiredDisplays,
     setAudioOffsets,
