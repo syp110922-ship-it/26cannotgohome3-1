@@ -51,6 +51,3 @@ npm start
 # (선택) 체험자 화면 전용 분리 서버 실행 (기본 포트 3001 -> 백엔드 3000 프록시)
 npm run start:display-preview
 ```
-- 관리자/조종기기 서버: `http://0.0.0.0:3000` (`/` → `control.html`)
-- 체험자 화면 전용 서버: `http://0.0.0.0:3001` (`/` → `display.html?id=A`, `?id=B`)
-- 기본 PIN: 관리자용 로그인 `admincgo2631` (`INITIAL_ADMIN_PIN`), 체험자용 `cgo2631` (`INITIAL_DISPLAY_PIN`), 설정탭 진입용 `adminsetmg` (`INITIAL_SETTINGS_PIN`) — 운영 전 변경 권장
