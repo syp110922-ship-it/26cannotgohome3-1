@@ -204,6 +204,37 @@ describe('HTTP & WebSocket server integration', () => {
 
     const closeCode = await closePromise;
     assert.equal(closeCode, 4003);
+    assert.ok(changedJson.controlToken);
+
+    // New controlToken works immediately for control WS reconnect
+    const wsCtrl2 = await connectWs(
+      `${wsBaseUrl}?role=control&token=${encodeURIComponent(changedJson.controlToken)}`,
+      { Origin: 'https://ghost-booth.netlify.app' }
+    );
+    const snap2 = await wsCtrl2.nextMessage((m) => m.t === 'status');
+    assert.equal(snap2.state, 'NOT_READY');
+    wsCtrl2.close();
+
+    // Settings validation: empty presets -> 400, NaN audio offset sanitized -> 0
+    const badPresets = await fetch(`${baseUrl}/settings`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${changedJson.token}`
+      },
+      body: JSON.stringify({ presets: ['   '] })
+    });
+    assert.equal(badPresets.status, 400);
+
+    const safeOffsets = await fetch(`${baseUrl}/settings`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${changedJson.token}`
+      },
+      body: JSON.stringify({ audioOffsets: { A: 'not-a-number', B: 9999 } })
+    }).then((r) => r.json());
+    assert.deepEqual(safeOffsets.audioOffsets, { A: 0, B: 2000 });
 
     // 5 failed currentPin attempts on PUT /settings/pin trigger 429 lockout
     for (let i = 0; i < 4; i++) {

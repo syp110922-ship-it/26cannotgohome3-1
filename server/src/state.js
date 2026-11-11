@@ -228,7 +228,10 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     d.lastSeen = Date.now();
     d.connected = true;
     if (Array.isArray(payload.cached)) {
-      d.cached = payload.cached.map(String);
+      d.cached = payload.cached
+        .slice(0, 20)
+        .map((v) => String(v ?? '').slice(0, 128))
+        .filter(Boolean);
     }
     if (typeof payload.dl === 'number' && Number.isFinite(payload.dl)) {
       d.dl = Math.max(0, Math.min(100, Math.round(payload.dl)));
@@ -239,7 +242,7 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     if (typeof payload.offsetMs === 'number' && Number.isFinite(payload.offsetMs)) {
       d.offsetMs = Math.round(payload.offsetMs);
     }
-    d.error = payload.error ? String(payload.error) : null;
+    d.error = payload.error ? String(payload.error).slice(0, 200) : null;
     recomputeState();
     emitStatus();
   }

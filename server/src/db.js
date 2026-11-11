@@ -164,7 +164,7 @@ function createDatabase(config) {
 
   function setPresets(presets) {
     const cleaned = presets
-      .map((s) => String(s).trim())
+      .map((s) => String(s ?? '').trim().slice(0, 120))
       .filter(Boolean)
       .slice(0, 12);
     setJsonSetting('presets', cleaned);

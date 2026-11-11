@@ -1,19 +1,152 @@
-(function initControlSkeleton() {
-  const TOKEN_KEY = 'ghost_control_token';
+(function initControlApp() {
+  const CONTROL_TOKEN_KEY = 'ghost_control_token';
+  const ADMIN_TOKEN_KEY = 'ghost_admin_token';
 
+  const PLAY_HOLD_MS = 600;
+  const STOP_HOLD_MS = 1000;
+  const SETTINGS_HOLD_MS = 3000;
+  const PLAY_RING_CIRCUMFERENCE = 2 * Math.PI * 82;
+  const SETTINGS_RING_CIRCUMFERENCE = 2 * Math.PI * 24;
+
+  const dotWrapA = document.getElementById('dot-wrap-A');
+  const dotWrapB = document.getElementById('dot-wrap-B');
   const dotA = document.getElementById('dot-A');
   const dotB = document.getElementById('dot-B');
-  const stateBadge = document.getElementById('state-badge');
+  const dlA = document.getElementById('dl-A');
+  const dlB = document.getElementById('dl-B');
+  const connPill = document.getElementById('conn-pill');
+
+  const settingsBtn = document.getElementById('settings-btn');
+  const settingsRing = document.getElementById('settings-ring');
+
   const playBtn = document.getElementById('play-btn');
+  const playRing = document.getElementById('play-ring');
   const playIcon = document.getElementById('play-icon');
-  const statusHint = document.getElementById('status-hint');
-  const timeText = document.getElementById('time-text');
+  const cooldownLabel = document.getElementById('cooldown-label');
+
   const timelineFill = document.getElementById('timeline-fill');
   const timelineThumb = document.getElementById('timeline-thumb');
+  const timeText = document.getElementById('time-text');
+  const toastEl = document.getElementById('toast');
+
+  const msgBtn = document.getElementById('msg-btn');
+  const msgSheetBackdrop = document.getElementById('msg-sheet-backdrop');
+  const msgSheetClose = document.getElementById('msg-sheet-close');
+  const msgSelectStep = document.getElementById('msg-select-step');
+  const msgConfirmStep = document.getElementById('msg-confirm-step');
+  const presetGrid = document.getElementById('preset-grid');
+  const customMsgForm = document.getElementById('custom-msg-form');
+  const customMsgInput = document.getElementById('custom-msg-input');
+  const msgConfirmPreview = document.getElementById('msg-confirm-preview');
+  const msgCancelBtn = document.getElementById('msg-cancel-btn');
+  const msgSendBtn = document.getElementById('msg-send-btn');
+
   const authModal = document.getElementById('auth-modal');
   const authForm = document.getElementById('auth-form');
+  const authTitle = document.getElementById('auth-title');
+  const authDesc = document.getElementById('auth-desc');
+  const authServerUrl = document.getElementById('auth-server-url');
   const pinInput = document.getElementById('pin-input');
+  const controlServerOverride = document.getElementById('control-server-override');
+  const controlServerInput = document.getElementById('control-server-input');
+  const controlSaveServerBtn = document.getElementById('control-save-server-btn');
   const authError = document.getElementById('auth-error');
+  const authCancelBtn = document.getElementById('auth-cancel-btn');
+
+  const settingsModal = document.getElementById('settings-modal');
+  const settingsCloseBtn = document.getElementById('settings-close-btn');
+  const fullscreenBtn = document.getElementById('fullscreen-btn');
+  const adminLogoutBtn = document.getElementById('admin-logout-btn');
+  const tabBtns = Array.from(document.querySelectorAll('.tab-btn'));
+
+  const deviceDetailGrid = document.getElementById('device-detail-grid');
+  const requiredDisplaysSelect = document.getElementById('required-displays-select');
+  const offsetAInput = document.getElementById('offset-A-input');
+  const offsetBInput = document.getElementById('offset-B-input');
+  const saveDeviceConfigBtn = document.getElementById('save-device-config-btn');
+  const resyncBtn = document.getElementById('resync-btn');
+
+  const diskFreeLabel = document.getElementById('disk-free-label');
+  const videoListContainer = document.getElementById('video-list-container');
+  const presetEditorList = document.getElementById('preset-editor-list');
+  const addPresetBtn = document.getElementById('add-preset-btn');
+  const savePresetsBtn = document.getElementById('save-presets-btn');
+
+  const changePinForm = document.getElementById('change-pin-form');
+  const currentPinInput = document.getElementById('current-pin-input');
+  const newPinInput = document.getElementById('new-pin-input');
+  const confirmPinInput = document.getElementById('confirm-pin-input');
+  const changePinError = document.getElementById('change-pin-error');
+
+  let currentSnapshot = null;
+  let presets = [
+    '잠시 후 입장해 주세요',
+    '영상이 곧 시작됩니다',
+    '퇴장해 주세요',
+    '스태프가 도와드릴게요'
+  ];
+  let pendingMsgText = '';
+  let lastSentMsgText = '';
+  let lastSentMsgAt = 0;
+
+  let authMode = 'control'; // 'control' | 'admin'
+  let wakeLock = null;
+  let toastTimer = null;
+  let settingsPollTimer = null;
+  let timelineTimer = null;
+  let driftCorrectionSec = 0;
+
+  authServerUrl.textContent = `서버: ${window.GHOST_CONFIG.apiBase}`;
+  controlServerInput.value = window.GHOST_CONFIG.apiBase;
+
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  function showToast(text) {
+    if (!text) return;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastEl.textContent = text;
+    toastEl.classList.remove('hidden');
+    toastTimer = setTimeout(() => {
+      toastTimer = null;
+      toastEl.classList.add('hidden');
+    }, 2400);
+  }
+
+  function vibrate(pattern) {
+    if (typeof navigator.vibrate === 'function') {
+      try {
+        navigator.vibrate(pattern);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  async function requestDeviceLocks() {
+    if (window.screen?.orientation?.lock) {
+      try {
+        await window.screen.orientation.lock('landscape');
+      } catch {
+        // ignore if unsupported or not in fullscreen
+      }
+    }
+    if ('wakeLock' in navigator && !wakeLock) {
+      try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => {
+          wakeLock = null;
+        });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && window.localStorage.getItem(CONTROL_TOKEN_KEY)) {
+      requestDeviceLocks();
+    }
+  });
 
   function formatTime(seconds) {
     const safe = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -22,23 +155,105 @@
     return `${m}:${s}`;
   }
 
-  function applyDot(el, dotColor) {
+  function formatBytes(bytes) {
+    if (typeof bytes !== 'number' || !Number.isFinite(bytes)) return '-';
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+
+  function applyDot(el, dlEl, wrapEl, device, requiredList) {
+    const dotColor = device?.dot || 'red';
     el.classList.remove('green', 'orange', 'red');
-    el.classList.add(dotColor || 'red');
+    el.classList.add(dotColor);
+
+    if (Array.isArray(requiredList) && !requiredList.includes(device?.id)) {
+      wrapEl.classList.add('optional');
+    } else {
+      wrapEl.classList.remove('optional');
+    }
+
+    const dl = Number(device?.dl || 0);
+    if (device?.connected && dotColor === 'orange' && dl > 0 && dl < 100) {
+      dlEl.textContent = `${dl}%`;
+      dlEl.classList.remove('hidden');
+    } else {
+      dlEl.classList.add('hidden');
+      dlEl.textContent = '';
+    }
+  }
+
+  function updateTimelineDisplay() {
+    const duration = currentSnapshot?.video?.duration || 0;
+    const state = currentSnapshot?.state || 'NOT_READY';
+
+    if (state === 'PLAYING' && currentSnapshot?.playback?.startAt) {
+      const elapsedRaw = (client.serverNow() - currentSnapshot.playback.startAt) / 1000;
+      const elapsed = Math.max(
+        0,
+        Math.min(duration || Number.MAX_SAFE_INTEGER, elapsedRaw + driftCorrectionSec)
+      );
+      const pct = duration > 0 ? Math.min(100, (elapsed / duration) * 100) : 0;
+      timelineFill.style.width = `${pct.toFixed(2)}%`;
+      timelineThumb.style.left = `${pct.toFixed(2)}%`;
+      timeText.textContent = `${formatTime(elapsed)} / ${formatTime(duration)}`;
+    } else {
+      timelineFill.style.width = '0%';
+      timelineThumb.style.left = '0%';
+      timeText.textContent = `0:00 / ${formatTime(duration)}`;
+    }
+
+    if (state === 'COOLDOWN' && currentSnapshot?.cooldownUntil) {
+      const remSec = Math.max(
+        1,
+        Math.ceil((currentSnapshot.cooldownUntil - client.serverNow()) / 1000)
+      );
+      cooldownLabel.textContent = `${remSec}초 후 대기 복귀`;
+      cooldownLabel.classList.remove('hidden');
+    } else if (currentSnapshot?.uploading) {
+      cooldownLabel.textContent = '영상 업로드 중';
+      cooldownLabel.classList.remove('hidden');
+    } else {
+      cooldownLabel.classList.add('hidden');
+    }
   }
 
   function renderStatus(snapshot) {
-    if (!snapshot) return;
-    stateBadge.textContent = snapshot.state || 'NOT_READY';
-    applyDot(dotA, snapshot.displays?.A?.dot);
-    applyDot(dotB, snapshot.displays?.B?.dot);
+    const prevState = currentSnapshot?.state;
+    currentSnapshot = snapshot;
+
+    const reqList = snapshot.requiredDisplays || ['A', 'B'];
+    applyDot(dotA, dlA, dotWrapA, snapshot.displays?.A || { id: 'A' }, reqList);
+    applyDot(dotB, dlB, dotWrapB, snapshot.displays?.B || { id: 'B' }, reqList);
+
+    if (snapshot.state === 'PLAYING' && snapshot.playback) {
+      if (prevState !== 'PLAYING') {
+        driftCorrectionSec = 0;
+      } else if (snapshot.playback.pos > 0) {
+        const expected = Math.max(
+          0,
+          (client.serverNow() - snapshot.playback.startAt) / 1000 + driftCorrectionSec
+        );
+        const diff = snapshot.playback.pos - expected;
+        if (Math.abs(diff) > 0.6 && Math.abs(diff) < 15) {
+          driftCorrectionSec += diff * 0.5;
+        }
+      }
+    } else {
+      driftCorrectionSec = 0;
+    }
+
+    // Cancel any active play/stop hold if state changed away from READY/PLAYING
+    if (playHoldState && playHoldState.expectedState !== snapshot.state) {
+      cancelPlayHold();
+    }
 
     playBtn.classList.remove('ready', 'playing', 'disabled');
-    if (snapshot.state === 'READY') {
+    if (snapshot.state === 'READY' && client.isConnected()) {
       playBtn.classList.add('ready');
       playBtn.disabled = false;
       playIcon.textContent = '▶';
-    } else if (snapshot.state === 'PLAYING') {
+    } else if (snapshot.state === 'PLAYING' && client.isConnected()) {
       playBtn.classList.add('playing');
       playBtn.disabled = false;
       playIcon.textContent = '■';
@@ -48,71 +263,323 @@
       playIcon.textContent = '▶';
     }
 
-    const duration = snapshot.video?.duration || 0;
-    const pos = snapshot.playback?.pos || 0;
-    const pct = duration > 0 ? Math.min(100, (pos / duration) * 100) : 0;
-    timelineFill.style.width = `${pct}%`;
-    timelineThumb.style.left = `${pct}%`;
-    timeText.textContent = `${formatTime(pos)} / ${formatTime(duration)}`;
+    resyncBtn.disabled = snapshot.state === 'PLAYING';
+    updateTimelineDisplay();
+    if (!settingsModal.classList.contains('hidden')) {
+      renderDeviceDetails(snapshot);
+    }
   }
 
+  // Long-press helper for Play/Stop button (0.6s READY -> play, 1s PLAYING -> stop)
+  let playHoldState = null;
+
+  function setPlayRingProgress(progress) {
+    const clamped = Math.max(0, Math.min(1, progress));
+    playRing.style.strokeDashoffset = String(PLAY_RING_CIRCUMFERENCE * (1 - clamped));
+  }
+
+  function cancelPlayHold() {
+    if (!playHoldState) return;
+    if (playHoldState.rafId) cancelAnimationFrame(playHoldState.rafId);
+    playHoldState = null;
+    playBtn.classList.remove('holding');
+    setPlayRingProgress(0);
+  }
+
+  playBtn.addEventListener('pointerdown', (e) => {
+    if (playBtn.disabled || playHoldState) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    requestDeviceLocks();
+
+    const state = currentSnapshot?.state;
+    if (state !== 'READY' && state !== 'PLAYING') return;
+
+    const durationMs = state === 'READY' ? PLAY_HOLD_MS : STOP_HOLD_MS;
+    const startedAt = performance.now();
+    playHoldState = {
+      pointerId: e.pointerId,
+      expectedState: state,
+      durationMs,
+      rafId: null
+    };
+    playBtn.classList.add('holding');
+
+    const tick = () => {
+      if (!playHoldState) return;
+      const progress = Math.max(0, performance.now() - startedAt) / playHoldState.durationMs;
+      setPlayRingProgress(progress);
+
+      if (progress >= 1) {
+        const actionState = playHoldState.expectedState;
+        cancelPlayHold();
+        vibrate(actionState === 'READY' ? 45 : [40, 30, 60]);
+        if (actionState === 'READY') {
+          client.send({ t: 'play' });
+        } else if (actionState === 'PLAYING') {
+          client.send({ t: 'stop' });
+        }
+        return;
+      }
+      playHoldState.rafId = requestAnimationFrame(tick);
+    };
+
+    playHoldState.rafId = requestAnimationFrame(tick);
+  });
+
+  playBtn.addEventListener('pointermove', (e) => {
+    if (!playHoldState || e.pointerId !== playHoldState.pointerId) return;
+    const rect = playBtn.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dist = Math.hypot(e.clientX - cx, e.clientY - cy);
+    if (dist > rect.width * 0.65) {
+      cancelPlayHold();
+    }
+  });
+
+  const endPlayPointer = (e) => {
+    if (playHoldState && e.pointerId === playHoldState.pointerId) {
+      cancelPlayHold();
+    }
+  };
+  playBtn.addEventListener('pointerup', endPlayPointer);
+  playBtn.addEventListener('pointercancel', endPlayPointer);
+
+  // Settings 3-second hold
+  let settingsHoldState = null;
+
+  function setSettingsRingProgress(progress) {
+    const clamped = Math.max(0, Math.min(1, progress));
+    settingsRing.style.strokeDashoffset = String(SETTINGS_RING_CIRCUMFERENCE * (1 - clamped));
+  }
+
+  function cancelSettingsHold() {
+    if (!settingsHoldState) return;
+    if (settingsHoldState.rafId) cancelAnimationFrame(settingsHoldState.rafId);
+    settingsHoldState = null;
+    setSettingsRingProgress(0);
+  }
+
+  settingsBtn.addEventListener('pointerdown', (e) => {
+    if (settingsHoldState) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    const startedAt = performance.now();
+    settingsHoldState = {
+      pointerId: e.pointerId,
+      rafId: null
+    };
+
+    const tick = () => {
+      if (!settingsHoldState) return;
+      const progress = Math.max(0, performance.now() - startedAt) / SETTINGS_HOLD_MS;
+      setSettingsRingProgress(progress);
+
+      if (progress >= 1) {
+        cancelSettingsHold();
+        vibrate(35);
+        openSettingsWithAuth();
+        return;
+      }
+      settingsHoldState.rafId = requestAnimationFrame(tick);
+    };
+    settingsHoldState.rafId = requestAnimationFrame(tick);
+  });
+
+  settingsBtn.addEventListener('pointermove', (e) => {
+    if (!settingsHoldState || e.pointerId !== settingsHoldState.pointerId) return;
+    const rect = settingsBtn.getBoundingClientRect();
+    if (
+      e.clientX < rect.left - 14 ||
+      e.clientX > rect.right + 14 ||
+      e.clientY < rect.top - 14 ||
+      e.clientY > rect.bottom + 14
+    ) {
+      cancelSettingsHold();
+    }
+  });
+
+  const endSettingsPointer = (e) => {
+    if (settingsHoldState && e.pointerId === settingsHoldState.pointerId) {
+      cancelSettingsHold();
+    }
+  };
+  settingsBtn.addEventListener('pointerup', endSettingsPointer);
+  settingsBtn.addEventListener('pointercancel', endSettingsPointer);
+
+  // WebSocket client
   const client = window.GhostWsClient.createSyncClient({
     wsBaseUrl: window.GHOST_CONFIG.wsUrl,
+    apiBase: window.GHOST_CONFIG.apiBase,
     role: 'control',
-    getToken: () => window.localStorage.getItem(TOKEN_KEY) || '',
-    onStatusChange: ({ connected, reconnectingInMs }) => {
+    getToken: () => window.localStorage.getItem(CONTROL_TOKEN_KEY) || '',
+    onStatusChange: ({ connected }) => {
       if (connected) {
-        statusHint.textContent = '서버 연결됨 (Phase 1 뼈대)';
-      } else if (reconnectingInMs) {
-        statusHint.textContent = `재연결 중 (${Math.ceil(reconnectingInMs / 1000)}초)...`;
+        connPill.classList.add('hidden');
+        fetchPresets();
       } else {
-        statusHint.textContent = '연결 끊김';
+        connPill.classList.remove('hidden');
+        if (currentSnapshot) {
+          renderStatus(currentSnapshot);
+        }
       }
-    },
-    onClockSync: ({ rttMs, offsetMs }) => {
-      statusHint.textContent = `서버 연결됨 · RTT ${rttMs}ms · 오차보정 ${offsetMs}ms`;
     },
     onMessage: (msg) => {
       if (msg.t === 'status') {
         renderStatus(msg);
+      } else if (msg.t === 'msg_ack') {
+        showToast('안내 메시지를 전송했습니다.');
+      } else if (msg.t === 'error') {
+        if (msg.action === 'msg' && msg.error === 'duplicate_message') {
+          showToast('동일한 메시지는 2초 후 재전송할 수 있습니다.');
+        } else if (msg.error) {
+          showToast(`요청 거부: ${msg.error}`);
+        }
       }
     },
     onAuthError: () => {
-      window.localStorage.removeItem(TOKEN_KEY);
-      authModal.classList.remove('hidden');
+      window.localStorage.removeItem(CONTROL_TOKEN_KEY);
+      closeMsgSheet();
+      closeSettingsModal();
+      openAuthModal('control');
     }
   });
 
-  async function verifyAndStart() {
-    const token = window.localStorage.getItem(TOKEN_KEY);
-    if (!token) {
-      authModal.classList.remove('hidden');
-      return;
-    }
-    try {
-      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/auth/verify`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!res.ok) {
-        window.localStorage.removeItem(TOKEN_KEY);
-        authModal.classList.remove('hidden');
-        return;
-      }
-      authModal.classList.add('hidden');
-      client.connect();
-    } catch {
-      client.connect();
+  // Message Bottom Sheet (Section 4.5)
+  function renderPresetButtons() {
+    presetGrid.textContent = '';
+    for (const text of presets) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'preset-choice-btn';
+      btn.textContent = text;
+      btn.addEventListener('click', () => enterMsgConfirm(text));
+      presetGrid.appendChild(btn);
     }
   }
+
+  function openMsgSheet() {
+    requestDeviceLocks();
+    renderPresetButtons();
+    pendingMsgText = '';
+    customMsgInput.value = '';
+    msgSelectStep.classList.remove('hidden');
+    msgConfirmStep.classList.add('hidden');
+    msgSheetBackdrop.classList.remove('hidden');
+  }
+
+  function closeMsgSheet() {
+    msgSheetBackdrop.classList.add('hidden');
+    pendingMsgText = '';
+  }
+
+  function enterMsgConfirm(text) {
+    const clean = String(text ?? '').trim();
+    if (!clean) return;
+    pendingMsgText = clean;
+    msgConfirmPreview.textContent = clean;
+    msgSelectStep.classList.add('hidden');
+    msgConfirmStep.classList.remove('hidden');
+  }
+
+  msgBtn.addEventListener('click', openMsgSheet);
+  msgSheetClose.addEventListener('click', closeMsgSheet);
+  msgSheetBackdrop.addEventListener('click', (e) => {
+    if (e.target === msgSheetBackdrop) closeMsgSheet();
+  });
+
+  customMsgForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    enterMsgConfirm(customMsgInput.value);
+  });
+
+  msgCancelBtn.addEventListener('click', () => {
+    msgSelectStep.classList.remove('hidden');
+    msgConfirmStep.classList.add('hidden');
+  });
+
+  msgSendBtn.addEventListener('click', () => {
+    if (!pendingMsgText) return;
+    const now = Date.now();
+    if (pendingMsgText === lastSentMsgText && now - lastSentMsgAt < 2000) {
+      showToast('동일한 메시지는 2초 이내 재전송할 수 없습니다.');
+      return;
+    }
+    const ok = client.send({ t: 'msg', text: pendingMsgText });
+    if (!ok) {
+      showToast('서버와 연결되어 있지 않습니다.');
+      return;
+    }
+    lastSentMsgText = pendingMsgText;
+    lastSentMsgAt = now;
+    closeMsgSheet();
+  });
+
+  async function fetchPresets() {
+    const token = window.localStorage.getItem(CONTROL_TOKEN_KEY);
+    if (!token) return;
+    try {
+      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/presets`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.presets)) {
+        presets = data.presets;
+      }
+    } catch {
+      // keep fallback presets
+    }
+  }
+
+  // Auth Modal (shared for initial control bind + admin settings unlock)
+  function openAuthModal(mode) {
+    authMode = mode;
+    authError.textContent = '';
+    pinInput.value = '';
+    if (mode === 'control') {
+      authTitle.textContent = '조종기기 등록';
+      authDesc.textContent = '조종기기 연결을 위해 스태프 공용 PIN을 입력해 주세요.';
+      authCancelBtn.classList.add('hidden');
+      controlServerOverride.classList.remove('hidden');
+    } else {
+      authTitle.textContent = '관리자 인증';
+      authDesc.textContent = '설정 화면을 열기 위해 스태프 공용 PIN을 입력해 주세요.';
+      authCancelBtn.classList.remove('hidden');
+      controlServerOverride.classList.add('hidden');
+    }
+    authModal.classList.remove('hidden');
+    setTimeout(() => pinInput.focus(), 50);
+  }
+
+  authCancelBtn.addEventListener('click', () => {
+    authModal.classList.add('hidden');
+    pinInput.value = '';
+  });
+
+  controlSaveServerBtn.addEventListener('click', () => {
+    authError.textContent = '';
+    if (!window.GHOST_CONFIG.setServerOrigin(controlServerInput.value)) {
+      authError.textContent = '올바른 https:// (또는 http://localhost) 서버 주소를 입력하세요.';
+      return;
+    }
+    window.location.reload();
+  });
 
   authForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     authError.textContent = '';
+    requestDeviceLocks();
+
     try {
       const res = await fetch(`${window.GHOST_CONFIG.apiBase}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: pinInput.value, scope: 'control' })
+        body: JSON.stringify({
+          pin: pinInput.value,
+          scope: authMode === 'admin' ? 'admin' : 'control'
+        })
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -122,14 +589,405 @@
             : 'PIN이 올바르지 않습니다.';
         return;
       }
-      window.localStorage.setItem(TOKEN_KEY, data.token);
+
       pinInput.value = '';
       authModal.classList.add('hidden');
-      client.connect();
+
+      if (authMode === 'control') {
+        window.localStorage.setItem(CONTROL_TOKEN_KEY, data.token);
+        client.connect();
+      } else {
+        window.sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+        openSettingsModal();
+      }
     } catch {
       authError.textContent = '서버에 연결할 수 없습니다.';
     }
   });
 
+  // Settings Modal (Section 4.6)
+  async function openSettingsWithAuth() {
+    const adminToken = window.sessionStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!adminToken) {
+      openAuthModal('admin');
+      return;
+    }
+    try {
+      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/auth/verify`, {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      if (!res.ok) {
+        window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+        openAuthModal('admin');
+        return;
+      }
+      const data = await res.json();
+      if (data.scope !== 'admin') {
+        window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+        openAuthModal('admin');
+        return;
+      }
+      openSettingsModal();
+    } catch {
+      showToast('서버 연결을 확인해 주세요.');
+    }
+  }
+
+  function getAdminHeaders(json = false) {
+    const token = window.sessionStorage.getItem(ADMIN_TOKEN_KEY) || '';
+    const headers = { Authorization: `Bearer ${token}` };
+    if (json) headers['Content-Type'] = 'application/json';
+    return headers;
+  }
+
+  function renderDeviceDetails(snapshot) {
+    if (!snapshot) return;
+    deviceDetailGrid.textContent = '';
+
+    for (const id of ['A', 'B']) {
+      const d = snapshot.displays?.[id] || { id, connected: false };
+      const card = document.createElement('div');
+      card.className = 'settings-card';
+
+      const title = document.createElement('h3');
+      title.textContent = `피조종기기 ${id}`;
+      card.appendChild(title);
+
+      const dl = document.createElement('dl');
+      dl.className = 'detail-dl';
+
+      const heartbeatAgo = d.lastSeen
+        ? `${Math.max(0, Math.round((Date.now() - d.lastSeen) / 1000))}초 전`
+        : '기록 없음';
+
+      const rows = [
+        ['접속 상태', d.connected ? '접속 중' : '끊김'],
+        ['캐시 상태', d.ready ? '준비 완료 (100%)' : `${Number(d.dl || 0)}%`],
+        ['마지막 하트비트', heartbeatAgo],
+        ['시계 오차 / RTT', d.rttMs !== null ? `${d.offsetMs ?? 0}ms / ${d.rttMs}ms` : '미측정'],
+        ['오류', d.error || '없음']
+      ];
+
+      for (const [k, v] of rows) {
+        const rowDiv = document.createElement('div');
+        const dt = document.createElement('dt');
+        dt.textContent = k;
+        const dd = document.createElement('dd');
+        dd.textContent = v;
+        rowDiv.appendChild(dt);
+        rowDiv.appendChild(dd);
+        dl.appendChild(rowDiv);
+      }
+
+      card.appendChild(dl);
+      deviceDetailGrid.appendChild(card);
+    }
+  }
+
+  function renderPresetEditor(list) {
+    presetEditorList.textContent = '';
+    for (const item of list) {
+      addPresetEditorRow(item);
+    }
+  }
+
+  function addPresetEditorRow(value = '') {
+    const row = document.createElement('div');
+    row.className = 'preset-edit-row';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 120;
+    input.value = value;
+    input.placeholder = '안내 문구 입력';
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'danger-btn small';
+    delBtn.textContent = '삭제';
+    delBtn.addEventListener('click', () => row.remove());
+
+    row.appendChild(input);
+    row.appendChild(delBtn);
+    presetEditorList.appendChild(row);
+  }
+
+  function renderVideoList(videos) {
+    videoListContainer.textContent = '';
+    if (!videos || videos.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'modal-desc';
+      empty.textContent = '등록된 영상이 없습니다.';
+      videoListContainer.appendChild(empty);
+      return;
+    }
+
+    for (const v of videos) {
+      const row = document.createElement('div');
+      row.className = 'video-item';
+
+      const left = document.createElement('div');
+      left.textContent = `${v.active ? '[활성] ' : ''}${v.filename} (${formatTime(v.duration)})`;
+      const right = document.createElement('div');
+      right.className = 'muted-meta';
+      right.textContent = formatBytes(v.size);
+
+      row.appendChild(left);
+      row.appendChild(right);
+      videoListContainer.appendChild(row);
+    }
+  }
+
+  async function loadSettingsData() {
+    try {
+      const [settingsRes, videosRes, statusRes] = await Promise.all([
+        fetch(`${window.GHOST_CONFIG.apiBase}/settings`, { headers: getAdminHeaders() }),
+        fetch(`${window.GHOST_CONFIG.apiBase}/videos`, { headers: getAdminHeaders() }),
+        fetch(`${window.GHOST_CONFIG.apiBase}/status`, { headers: getAdminHeaders() })
+      ]);
+
+      if (settingsRes.status === 401 || settingsRes.status === 403) {
+        window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+        closeSettingsModal();
+        openAuthModal('admin');
+        return;
+      }
+
+      const settingsData = await settingsRes.json();
+      if (settingsData.ok) {
+        presets = settingsData.presets || presets;
+        renderPresetEditor(presets);
+        const reqVal = (settingsData.requiredDisplays || ['A', 'B']).join(',');
+        requiredDisplaysSelect.value = ['A,B', 'A', 'B'].includes(reqVal) ? reqVal : 'A,B';
+        offsetAInput.value = String(settingsData.audioOffsets?.A ?? 0);
+        offsetBInput.value = String(settingsData.audioOffsets?.B ?? 0);
+      }
+
+      if (videosRes.ok) {
+        const videosData = await videosRes.json();
+        diskFreeLabel.textContent = `디스크 여유: ${formatBytes(videosData.diskFreeBytes)}`;
+        renderVideoList(videosData.videos || []);
+      }
+
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        renderStatus(statusData);
+      }
+    } catch {
+      showToast('설정 정보를 불러오지 못했습니다.');
+    }
+  }
+
+  function openSettingsModal() {
+    settingsModal.classList.remove('hidden');
+    loadSettingsData();
+    if (settingsPollTimer) clearInterval(settingsPollTimer);
+    settingsPollTimer = setInterval(async () => {
+      try {
+        const res = await fetch(`${window.GHOST_CONFIG.apiBase}/status`, {
+          headers: getAdminHeaders()
+        });
+        if (res.status === 401 || res.status === 403) {
+          window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+          closeSettingsModal();
+          openAuthModal('admin');
+          return;
+        }
+        if (res.ok) {
+          const data = await res.json();
+          renderStatus(data);
+        }
+      } catch {
+        // ignore transient poll errors
+      }
+    }, 2000);
+  }
+
+  function closeSettingsModal() {
+    if (settingsPollTimer) {
+      clearInterval(settingsPollTimer);
+      settingsPollTimer = null;
+    }
+    settingsModal.classList.add('hidden');
+  }
+
+  settingsCloseBtn.addEventListener('click', closeSettingsModal);
+
+  for (const btn of tabBtns) {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.tab;
+      for (const b of tabBtns) b.classList.toggle('active', b === btn);
+      for (const pane of document.querySelectorAll('.tab-pane')) {
+        pane.classList.toggle('hidden', pane.id !== `tab-${target}`);
+      }
+    });
+  }
+
+  fullscreenBtn.addEventListener('click', async () => {
+    if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+      try {
+        await document.documentElement.requestFullscreen();
+      } catch {
+        // ignore
+      }
+    }
+    await requestDeviceLocks();
+  });
+
+  adminLogoutBtn.addEventListener('click', () => {
+    window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    closeSettingsModal();
+    showToast('설정이 잠금되었습니다.');
+  });
+
+  saveDeviceConfigBtn.addEventListener('click', async () => {
+    const requiredDisplays = requiredDisplaysSelect.value.split(',');
+    const audioOffsets = {
+      A: Number(offsetAInput.value || 0),
+      B: Number(offsetBInput.value || 0)
+    };
+    try {
+      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/settings`, {
+        method: 'PUT',
+        headers: getAdminHeaders(true),
+        body: JSON.stringify({ requiredDisplays, audioOffsets })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showToast('구성 저장 실패');
+        return;
+      }
+      showToast('기기 구성이 저장되었습니다.');
+    } catch {
+      showToast('서버 통신 오류');
+    }
+  });
+
+  resyncBtn.addEventListener('click', async () => {
+    try {
+      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/resync`, {
+        method: 'POST',
+        headers: getAdminHeaders()
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showToast(`재동기화 불가: ${data.reason || '상태 확인'}`);
+        return;
+      }
+      showToast('A/B 기기에 영상 재다운로드 명령을 보냈습니다.');
+    } catch {
+      showToast('서버 통신 오류');
+    }
+  });
+
+  addPresetBtn.addEventListener('click', () => {
+    if (presetEditorList.children.length >= 12) {
+      showToast('프리셋은 최대 12개까지 등록할 수 있습니다.');
+      return;
+    }
+    addPresetEditorRow('');
+  });
+
+  savePresetsBtn.addEventListener('click', async () => {
+    const nextPresets = Array.from(presetEditorList.querySelectorAll('input'))
+      .map((inp) => inp.value.trim())
+      .filter(Boolean);
+    if (nextPresets.length === 0) {
+      showToast('최소 1개 이상의 프리셋이 필요합니다.');
+      return;
+    }
+    try {
+      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/settings`, {
+        method: 'PUT',
+        headers: getAdminHeaders(true),
+        body: JSON.stringify({ presets: nextPresets })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showToast('프리셋 저장 실패');
+        return;
+      }
+      presets = data.presets;
+      renderPresetEditor(presets);
+      showToast('메시지 프리셋이 저장되었습니다.');
+    } catch {
+      showToast('서버 통신 오류');
+    }
+  });
+
+  changePinForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    changePinError.textContent = '';
+
+    if (newPinInput.value.trim() !== confirmPinInput.value.trim()) {
+      changePinError.textContent = '새 PIN 확인이 일치하지 않습니다.';
+      return;
+    }
+
+    try {
+      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/settings/pin`, {
+        method: 'PUT',
+        headers: getAdminHeaders(true),
+        body: JSON.stringify({
+          currentPin: currentPinInput.value,
+          newPin: newPinInput.value.trim()
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        changePinError.textContent =
+          data.error === 'pin_locked'
+            ? `잠금 상태입니다 (${data.retryAfterSec}초 후 재시도)`
+            : '현재 PIN 또는 새 PIN 형식을 확인해 주세요.';
+        return;
+      }
+
+      window.sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+      if (data.controlToken) {
+        window.localStorage.setItem(CONTROL_TOKEN_KEY, data.controlToken);
+      }
+      currentPinInput.value = '';
+      newPinInput.value = '';
+      confirmPinInput.value = '';
+      client.disconnect();
+      client.connect();
+      showToast('PIN이 변경되었습니다. 체험자 기기는 새 PIN으로 재등록하세요.');
+    } catch {
+      changePinError.textContent = '서버 통신 오류';
+    }
+  });
+
+  // Initialize operational startup
+  async function verifyAndStart() {
+    timelineTimer = setInterval(updateTimelineDisplay, 200);
+
+    const token = window.localStorage.getItem(CONTROL_TOKEN_KEY);
+    if (!token) {
+      openAuthModal('control');
+      return;
+    }
+    try {
+      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/auth/verify`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401 || res.status === 403) {
+        window.localStorage.removeItem(CONTROL_TOKEN_KEY);
+        openAuthModal('control');
+        return;
+      }
+      authModal.classList.add('hidden');
+      client.connect();
+    } catch {
+      client.connect();
+    }
+  }
+
   verifyAndStart();
+
+  window.__GHOST_CONTROL_API__ = {
+    getSnapshot: () => currentSnapshot,
+    getPresets: () => [...presets],
+    cancelPlayHold,
+    cancelSettingsHold
+  };
 })();

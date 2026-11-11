@@ -428,10 +428,20 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
         const body = await readJsonBody(req);
 
         if (Array.isArray(body.presets)) {
-          db.setPresets(body.presets);
+          const cleaned = body.presets.map((s) => String(s ?? '').trim()).filter(Boolean);
+          if (cleaned.length === 0) {
+            sendJson(res, 400, { ok: false, error: 'presets_cannot_be_empty' });
+            return;
+          }
+          db.setPresets(cleaned);
         }
         if (Array.isArray(body.requiredDisplays)) {
-          sm.setRequiredDisplays(body.requiredDisplays);
+          try {
+            sm.setRequiredDisplays(body.requiredDisplays);
+          } catch (err) {
+            sendJson(res, 400, { ok: false, error: err.message });
+            return;
+          }
         }
         if (body.audioOffsets && typeof body.audioOffsets === 'object') {
           sm.setAudioOffsets(body.audioOffsets);
@@ -498,7 +508,18 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
           db.getAuthSecret(),
           config.adminTokenTtlSec
         );
-        sendJson(res, 200, { ok: true, token, expiresAt });
+        const { token: controlToken, expiresAt: controlExpiresAt } = signToken(
+          { scope: 'control', deviceId: null, ver: nextVer },
+          db.getAuthSecret(),
+          config.deviceTokenTtlSec
+        );
+        sendJson(res, 200, {
+          ok: true,
+          token,
+          expiresAt,
+          controlToken,
+          controlExpiresAt
+        });
         return;
       }
 

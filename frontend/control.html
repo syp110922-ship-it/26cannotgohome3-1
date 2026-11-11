@@ -17,24 +17,34 @@
         <div class="dot-pill" id="dot-wrap-A">
           <span class="dot red" id="dot-A"></span>
           <span class="dot-label">A</span>
+          <span class="dot-dl hidden" id="dl-A"></span>
         </div>
         <div class="dot-pill" id="dot-wrap-B">
           <span class="dot red" id="dot-B"></span>
           <span class="dot-label">B</span>
+          <span class="dot-dl hidden" id="dl-B"></span>
         </div>
-        <span class="state-badge" id="state-badge">NOT_READY</span>
+        <span class="conn-pill hidden" id="conn-pill">재연결 중...</span>
       </div>
 
-      <button class="icon-btn" id="settings-btn" type="button" aria-label="설정">
-        ⚙
+      <button class="settings-hold-btn" id="settings-btn" type="button" aria-label="설정 (3초 길게 누름)">
+        <svg class="hold-ring" viewBox="0 0 56 56" aria-hidden="true">
+          <circle class="hold-ring-bg" cx="28" cy="28" r="24"></circle>
+          <circle class="hold-ring-fg" id="settings-ring" cx="28" cy="28" r="24"></circle>
+        </svg>
+        <span class="gear-icon">⚙</span>
       </button>
     </header>
 
     <section class="center-stage">
-      <button class="play-btn disabled" id="play-btn" type="button" disabled aria-label="재생 또는 정지">
+      <button class="play-btn disabled" id="play-btn" type="button" disabled aria-label="길게 눌러 재생 또는 정지">
+        <svg class="play-ring" viewBox="0 0 180 180" aria-hidden="true">
+          <circle class="play-ring-bg" cx="90" cy="90" r="82"></circle>
+          <circle class="play-ring-fg" id="play-ring" cx="90" cy="90" r="82"></circle>
+        </svg>
         <span class="play-icon" id="play-icon">▶</span>
       </button>
-      <p class="skeleton-hint" id="status-hint">Phase 1 서버 뼈대 연결 대기 중</p>
+      <div class="cooldown-label hidden" id="cooldown-label"></div>
     </section>
 
     <footer class="bottom-bar">
@@ -52,10 +62,47 @@
     </footer>
   </main>
 
+  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Message Bottom Sheet -->
+  <div class="sheet-backdrop hidden" id="msg-sheet-backdrop">
+    <section class="bottom-sheet" id="msg-sheet" aria-label="안내 메시지 전송">
+      <div class="sheet-header">
+        <h2>체험자 안내 메시지</h2>
+        <button type="button" class="close-x" id="msg-sheet-close" aria-label="닫기">✕</button>
+      </div>
+
+      <div id="msg-select-step">
+        <div class="preset-grid" id="preset-grid"></div>
+        <form class="custom-msg-row" id="custom-msg-form">
+          <input
+            type="text"
+            id="custom-msg-input"
+            maxlength="200"
+            placeholder="직접 메시지 입력..."
+            autocomplete="off"
+          />
+          <button type="submit" class="secondary-btn">선택</button>
+        </form>
+      </div>
+
+      <div class="hidden" id="msg-confirm-step">
+        <p class="confirm-caption">다음 메시지를 체험자 기기에 전송할까요? (5초 표시)</p>
+        <div class="confirm-preview" id="msg-confirm-preview"></div>
+        <div class="confirm-actions">
+          <button type="button" class="secondary-btn" id="msg-cancel-btn">취소</button>
+          <button type="button" class="primary-btn" id="msg-send-btn">보내기</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- PIN Auth Modal (shared for initial control bind & settings admin auth) -->
   <div class="modal-backdrop hidden" id="auth-modal">
     <form class="modal-card" id="auth-form">
-      <h2>스태프 인증</h2>
+      <h2 id="auth-title">스태프 인증</h2>
       <p class="modal-desc" id="auth-desc">조종기기 연결을 위해 공용 PIN을 입력해 주세요.</p>
+      <div class="server-pill" id="auth-server-url"></div>
       <input
         type="password"
         inputmode="numeric"
@@ -64,9 +111,128 @@
         autocomplete="off"
         required
       />
+      <details class="server-override" id="control-server-override">
+        <summary>서버 주소 수동 설정</summary>
+        <div class="server-override-row">
+          <input
+            type="url"
+            id="control-server-input"
+            placeholder="https://your-subdomain.duckdns.org"
+            autocomplete="off"
+          />
+          <button type="button" class="secondary-btn" id="control-save-server-btn">적용</button>
+        </div>
+      </details>
       <p class="error-text" id="auth-error"></p>
-      <button class="primary-btn" type="submit">연결하기</button>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn hidden" id="auth-cancel-btn">취소</button>
+        <button class="primary-btn" type="submit" id="auth-submit-btn">확인</button>
+      </div>
     </form>
+  </div>
+
+  <!-- Settings Modal (3s hold on gear + admin PIN) -->
+  <div class="modal-backdrop hidden" id="settings-modal">
+    <section class="settings-panel" aria-label="관리자 설정">
+      <header class="settings-header">
+        <h2>관리자 설정</h2>
+        <div class="settings-header-actions">
+          <button type="button" class="secondary-btn small" id="fullscreen-btn">전체화면</button>
+          <button type="button" class="secondary-btn small" id="admin-logout-btn">잠금</button>
+          <button type="button" class="close-x" id="settings-close-btn" aria-label="설정 닫기">✕</button>
+        </div>
+      </header>
+
+      <nav class="settings-tabs" role="tablist">
+        <button type="button" class="tab-btn active" data-tab="devices">기기 상태</button>
+        <button type="button" class="tab-btn" data-tab="videos">영상 관리</button>
+        <button type="button" class="tab-btn" data-tab="presets">프리셋 편집</button>
+        <button type="button" class="tab-btn" data-tab="pin">PIN 변경</button>
+      </nav>
+
+      <div class="settings-body">
+        <!-- Tab 1: Device Status & Sync Settings -->
+        <div class="tab-pane" id="tab-devices">
+          <div class="device-detail-grid" id="device-detail-grid"></div>
+
+          <div class="settings-card">
+            <h3>운영 구성 및 이어폰 동기화</h3>
+            <div class="form-row">
+              <label for="required-displays-select">필수 체험자 기기</label>
+              <select id="required-displays-select">
+                <option value="A,B">A + B (2대 동시)</option>
+                <option value="A">A만 사용 (1대)</option>
+                <option value="B">B만 사용 (1대)</option>
+              </select>
+            </div>
+            <div class="offset-grid">
+              <div class="form-row">
+                <label for="offset-A-input">A 오디오 보정 (ms)</label>
+                <input type="number" id="offset-A-input" min="-2000" max="2000" step="10" value="0" />
+              </div>
+              <div class="form-row">
+                <label for="offset-B-input">B 오디오 보정 (ms)</label>
+                <input type="number" id="offset-B-input" min="-2000" max="2000" step="10" value="0" />
+              </div>
+            </div>
+            <div class="settings-actions">
+              <button type="button" class="primary-btn" id="save-device-config-btn">구성 저장</button>
+              <button type="button" class="danger-btn" id="resync-btn">강제 재동기화</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Video Management (wired for Phase 4) -->
+        <div class="tab-pane hidden" id="tab-videos">
+          <div class="settings-card">
+            <div class="card-head-row">
+              <h3>영상 목록</h3>
+              <span class="muted-meta" id="disk-free-label">남은 용량 확인 중</span>
+            </div>
+            <div id="video-list-container" class="video-list"></div>
+            <div class="phase4-notice">
+              영상 파일 업로드·테스트 재생·복원 기능은 4단계에서 활성화됩니다. (현재 최대 파일 크기 제한 없음 / 이전 영상 3개 보관 정책 적용)
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Preset Editor -->
+        <div class="tab-pane hidden" id="tab-presets">
+          <div class="settings-card">
+            <h3>메시지 프리셋 편집</h3>
+            <div id="preset-editor-list" class="preset-editor-list"></div>
+            <div class="settings-actions">
+              <button type="button" class="secondary-btn" id="add-preset-btn">+ 프리셋 추가</button>
+              <button type="button" class="primary-btn" id="save-presets-btn">프리셋 저장</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: PIN Change -->
+        <div class="tab-pane hidden" id="tab-pin">
+          <form class="settings-card" id="change-pin-form">
+            <h3>스태프 공용 PIN 변경</h3>
+            <p class="modal-desc">
+              PIN을 변경하면 조종기기는 즉시 갱신되며, 체험자 태블릿(A/B)은 보안을 위해 새 PIN으로 재등록이 필요합니다.
+            </p>
+            <div class="form-row">
+              <label for="current-pin-input">현재 PIN</label>
+              <input type="password" inputmode="numeric" id="current-pin-input" required autocomplete="off" />
+            </div>
+            <div class="form-row">
+              <label for="new-pin-input">새 PIN (4~20자)</label>
+              <input type="password" inputmode="numeric" id="new-pin-input" minlength="4" maxlength="20" required autocomplete="off" />
+            </div>
+            <div class="form-row">
+              <label for="confirm-pin-input">새 PIN 확인</label>
+              <input type="password" inputmode="numeric" id="confirm-pin-input" minlength="4" maxlength="20" required autocomplete="off" />
+            </div>
+            <p class="error-text" id="change-pin-error"></p>
+            <button type="submit" class="primary-btn">PIN 변경</button>
+          </form>
+        </div>
+      </div>
+    </section>
   </div>
 
   <script src="./config.js"></script>
