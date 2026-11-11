@@ -325,7 +325,7 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
           sendJson(res, 400, { ok: false, error: 'invalid_pin_format' });
           return;
         }
-        if (!['admin', 'control', 'display'].includes(scope)) {
+        if (!['admin', 'control', 'display', 'diagnostics'].includes(scope)) {
           sendJson(res, 400, { ok: false, error: 'invalid_scope' });
           return;
         }
@@ -339,6 +339,12 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
           valid =
             verifyPin(pin, db.getDisplayPinHash()) ||
             verifyPin(pin, db.getAdminPinHash());
+        } else if (scope === 'admin') {
+          valid = verifyPin(pin, db.getSettingsPinHash());
+        } else if (scope === 'diagnostics') {
+          valid =
+            verifyPin(pin, db.getAdminPinHash()) ||
+            verifyPin(pin, db.getSettingsPinHash());
         } else {
           valid = verifyPin(pin, db.getAdminPinHash());
         }
@@ -429,6 +435,7 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
           isDefaultPin: db.isDefaultPin(),
           isDefaultAdminPin: db.isDefaultAdminPin(),
           isDefaultDisplayPin: db.isDefaultDisplayPin(),
+          isDefaultSettingsPin: db.isDefaultSettingsPin(),
           archiveRetention: config.archiveRetention,
           playStats: db.getPlayStats()
         });
@@ -495,11 +502,13 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
               : '';
         const newDisplayPin =
           body.newDisplayPin !== undefined ? String(body.newDisplayPin).trim() : '';
+        const newSettingsPin =
+          body.newSettingsPin !== undefined ? String(body.newSettingsPin).trim() : '';
 
         if (
           !currentPin ||
           currentPin.length > MAX_PIN_LENGTH ||
-          !verifyPin(currentPin, db.getAdminPinHash())
+          !verifyPin(currentPin, db.getSettingsPinHash())
         ) {
           const failure = pinGuard.recordFailure();
           if (failure.locked) {
@@ -518,7 +527,7 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
           return;
         }
 
-        if (!newAdminPin && !newDisplayPin) {
+        if (!newAdminPin && !newDisplayPin && !newSettingsPin) {
           sendJson(res, 400, { ok: false, error: 'missing_new_pin' });
           return;
         }
@@ -533,11 +542,19 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
           sendJson(res, 400, { ok: false, error: 'invalid_new_display_pin_length' });
           return;
         }
+        if (
+          newSettingsPin &&
+          (newSettingsPin.length < 4 || newSettingsPin.length > MAX_PIN_LENGTH)
+        ) {
+          sendJson(res, 400, { ok: false, error: 'invalid_new_settings_pin_length' });
+          return;
+        }
 
         pinGuard.recordSuccess();
         const nextVer = db.updatePins({
           adminPinHash: newAdminPin ? hashPin(newAdminPin) : null,
-          displayPinHash: newDisplayPin ? hashPin(newDisplayPin) : null
+          displayPinHash: newDisplayPin ? hashPin(newDisplayPin) : null,
+          settingsPinHash: newSettingsPin ? hashPin(newSettingsPin) : null
         });
         if (typeof onPinChanged === 'function') {
           onPinChanged();

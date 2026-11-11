@@ -91,7 +91,7 @@ if (require.main === module) {
       console.log(
         `[ghost-sync] Required displays: ${app.db.getRequiredDisplays().join(', ')}`
       );
-      console.log('[ghost-sync] Dual PIN auth ready (admin/control PIN + display PIN)');
+      console.log('[ghost-sync] 3-PIN auth ready (admin/control + display + settings)');
     })
     .catch((err) => {
       console.error('[ghost-sync] Failed to start server:', err);

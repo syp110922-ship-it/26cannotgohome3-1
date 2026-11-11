@@ -67,8 +67,9 @@ describe('HTTP & WebSocket server integration', () => {
       dataDir: tmpDir,
       videosDir: path.join(tmpDir, 'videos'),
       dbPath: path.join(tmpDir, 'app.db'),
-      initialAdminPin: 'admincannotgohome31',
-      initialDisplayPin: 'cannotgohome31',
+      initialAdminPin: 'admincgo2631',
+      initialDisplayPin: 'cgo2631',
+      initialSettingsPin: 'adminsetmg',
       allowedOrigins: ['https://ghost-booth.netlify.app'],
       cooldownMs: 60,
       playScheduleLeadMs: 40,
@@ -84,35 +85,58 @@ describe('HTTP & WebSocket server integration', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('enforces dual-PIN scope separation, lockout, and dual-PIN rotation', async () => {
+  it('enforces 3-PIN scope separation (control, display, settings), lockout, and PIN rotation', async () => {
     const health = await fetch(`${baseUrl}/health`).then((r) => r.json());
     assert.equal(health.ok, true);
     assert.equal(health.state, 'NOT_READY');
 
-    // Experiencer PIN cannot unlock admin or control scopes
-    const dispOnControl = await fetch(`${baseUrl}/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: 'cannotgohome31', scope: 'control' })
-    });
-    assert.equal(dispOnControl.status, 401);
+    // Display PIN cannot unlock control or settings/admin
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: 'cgo2631', scope: 'control' })
+        })
+      ).status,
+      401
+    );
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: 'cgo2631', scope: 'admin' })
+        })
+      ).status,
+      401
+    );
 
-    const dispOnAdmin = await fetch(`${baseUrl}/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: 'cannotgohome31', scope: 'admin' })
-    });
-    assert.equal(dispOnAdmin.status, 401);
+    // Control/Admin login PIN cannot unlock settings tab ('admin') directly
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: 'admincgo2631', scope: 'admin' })
+        })
+      ).status,
+      401
+    );
 
-    // 3 more failed attempts trigger 5-strike 429 lockout
-    for (let i = 0; i < 2; i++) {
-      const r = await fetch(`${baseUrl}/auth`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: 'wrongpin', scope: 'admin' })
-      });
-      assert.equal(r.status, 401);
-    }
+    // Settings PIN cannot unlock control directly
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: 'adminsetmg', scope: 'control' })
+        })
+      ).status,
+      401
+    );
+
+    // 5th failed attempt triggers 429 lockout
     const locked = await fetch(`${baseUrl}/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -120,26 +144,52 @@ describe('HTTP & WebSocket server integration', () => {
     });
     assert.equal(locked.status, 429);
 
-    // Reset guard to test valid dual-PIN login & rotation
+    // Reset guard to test valid 3-PIN login & rotation
     app.pinGuard.recordSuccess();
 
-    const dispAuth = await fetch(`${baseUrl}/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: 'cannotgohome31', scope: 'display', deviceId: 'A' })
-    });
-    assert.equal(dispAuth.status, 200);
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: 'cgo2631', scope: 'display', deviceId: 'A' })
+        })
+      ).status,
+      200
+    );
+
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: 'admincgo2631', scope: 'control' })
+        })
+      ).status,
+      200
+    );
+
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: 'admincgo2631', scope: 'diagnostics' })
+        })
+      ).status,
+      200
+    );
 
     const authRes = await fetch(`${baseUrl}/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: 'admincannotgohome31', scope: 'admin' })
+      body: JSON.stringify({ pin: 'adminsetmg', scope: 'admin' })
     });
     const authJson = await authRes.json();
     assert.equal(authRes.status, 200);
     assert.equal(authJson.ok, true);
 
-    // Update both admin & display alphanumeric PINs
+    // Update all 3 alphanumeric PINs using current settings PIN
     const changeRes = await fetch(`${baseUrl}/settings/pin`, {
       method: 'PUT',
       headers: {
@@ -147,9 +197,10 @@ describe('HTTP & WebSocket server integration', () => {
         Authorization: `Bearer ${authJson.token}`
       },
       body: JSON.stringify({
-        currentPin: 'admincannotgohome31',
+        currentPin: 'adminsetmg',
         newAdminPin: 'staff2026new',
-        newDisplayPin: 'guest2026new'
+        newDisplayPin: 'guest2026new',
+        newSettingsPin: 'set2026new'
       })
     });
     const changeJson = await changeRes.json();
@@ -164,26 +215,46 @@ describe('HTTP & WebSocket server integration', () => {
     assert.equal(oldVerify.status, 401);
 
     // New PINs work in their respective scopes only
-    const newDispAuth = await fetch(`${baseUrl}/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: 'guest2026new', scope: 'display', deviceId: 'B' })
-    });
-    assert.equal(newDispAuth.status, 200);
-
-    const newDispDeniedControl = await fetch(`${baseUrl}/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: 'guest2026new', scope: 'control' })
-    });
-    assert.equal(newDispDeniedControl.status, 401);
-
-    const newAdminAuth = await fetch(`${baseUrl}/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: 'staff2026new', scope: 'control' })
-    });
-    assert.equal(newAdminAuth.status, 200);
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: 'guest2026new', scope: 'display', deviceId: 'B' })
+        })
+      ).status,
+      200
+    );
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: 'staff2026new', scope: 'control' })
+        })
+      ).status,
+      200
+    );
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: 'set2026new', scope: 'admin' })
+        })
+      ).status,
+      200
+    );
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: 'staff2026new', scope: 'admin' })
+        })
+      ).status,
+      401
+    );
 
     // Non-JSON Content-Type on POST /auth rejected with 415
     const badCt = await fetch(`${baseUrl}/auth`, {
@@ -200,7 +271,7 @@ describe('HTTP & WebSocket server integration', () => {
         'Content-Type': 'application/json',
         Origin: 'https://attacker.example.com'
       },
-      body: JSON.stringify({ pin: 'staff2026new', scope: 'admin' })
+      body: JSON.stringify({ pin: 'set2026new', scope: 'admin' })
     });
     assert.equal(badOrigin.status, 403);
 
@@ -224,13 +295,13 @@ describe('HTTP & WebSocket server integration', () => {
     const adminRes = await fetch(`${baseUrl}/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: 'admincannotgohome31', scope: 'admin' })
+      body: JSON.stringify({ pin: 'adminsetmg', scope: 'admin' })
     }).then((r) => r.json());
 
     const ctrlRes = await fetch(`${baseUrl}/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: 'admincannotgohome31', scope: 'control' })
+      body: JSON.stringify({ pin: 'admincgo2631', scope: 'control' })
     }).then((r) => r.json());
 
     const wsCtrl = await connectWs(
@@ -250,7 +321,7 @@ describe('HTTP & WebSocket server integration', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${adminRes.token}`
       },
-      body: JSON.stringify({ currentPin: 'admincannotgohome31', newAdminPin: 'staff9999' })
+      body: JSON.stringify({ currentPin: 'adminsetmg', newAdminPin: 'staff9999' })
     });
     const changedJson = await changed.json();
     assert.equal(changed.status, 200);
@@ -323,9 +394,9 @@ describe('HTTP & WebSocket server integration', () => {
       return json.token;
     };
 
-    const controlToken = await getToken('admincannotgohome31', 'control');
-    const tokenA = await getToken('cannotgohome31', 'display', 'A');
-    const tokenB = await getToken('cannotgohome31', 'display', 'B');
+    const controlToken = await getToken('admincgo2631', 'control');
+    const tokenA = await getToken('cgo2631', 'display', 'A');
+    const tokenB = await getToken('cgo2631', 'display', 'B');
 
     // Disallowed origin fails with 403
     await assert.rejects(
@@ -442,7 +513,7 @@ describe('HTTP & WebSocket server integration', () => {
       const dispAuth = await fetch(`${previewUrl}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: 'cannotgohome31', scope: 'display', deviceId: 'A' })
+        body: JSON.stringify({ pin: 'cgo2631', scope: 'display', deviceId: 'A' })
       }).then((r) => r.json());
       assert.equal(dispAuth.ok, true);
 

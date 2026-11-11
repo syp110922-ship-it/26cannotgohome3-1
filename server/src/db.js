@@ -83,6 +83,12 @@ function createDatabase(config) {
     stmtInsertDefault.run('display_pin_is_default', 'true');
   }
 
+  const existingSettingsPin = stmtGetSetting.get('settings_pin_hash');
+  if (!existingSettingsPin) {
+    stmtInsertDefault.run('settings_pin_hash', hashPin(config.initialSettingsPin));
+    stmtInsertDefault.run('settings_pin_is_default', 'true');
+  }
+
   const secretToSeed =
     config.authSecret && config.authSecret.trim().length >= 16
       ? config.authSecret.trim()
@@ -141,7 +147,11 @@ function createDatabase(config) {
     return getSetting('display_pin_hash');
   }
 
-  function updatePins({ adminPinHash = null, displayPinHash = null }) {
+  function getSettingsPinHash() {
+    return getSetting('settings_pin_hash');
+  }
+
+  function updatePins({ adminPinHash = null, displayPinHash = null, settingsPinHash = null }) {
     db.exec('BEGIN IMMEDIATE;');
     try {
       if (adminPinHash) {
@@ -151,6 +161,10 @@ function createDatabase(config) {
       if (displayPinHash) {
         setSetting('display_pin_hash', displayPinHash);
         setSetting('display_pin_is_default', 'false');
+      }
+      if (settingsPinHash) {
+        setSetting('settings_pin_hash', settingsPinHash);
+        setSetting('settings_pin_is_default', 'false');
       }
       const nextVer = getTokenVersion() + 1;
       setSetting('token_version', String(nextVer));
@@ -165,7 +179,8 @@ function createDatabase(config) {
   function isDefaultPin() {
     return (
       getSetting('admin_pin_is_default', 'false') === 'true' ||
-      getSetting('display_pin_is_default', 'false') === 'true'
+      getSetting('display_pin_is_default', 'false') === 'true' ||
+      getSetting('settings_pin_is_default', 'false') === 'true'
     );
   }
 
@@ -175,6 +190,10 @@ function createDatabase(config) {
 
   function isDefaultDisplayPin() {
     return getSetting('display_pin_is_default', 'false') === 'true';
+  }
+
+  function isDefaultSettingsPin() {
+    return getSetting('settings_pin_is_default', 'false') === 'true';
   }
 
   function getPinGuardState() {
@@ -377,10 +396,12 @@ function createDatabase(config) {
     bumpTokenVersion,
     getAdminPinHash,
     getDisplayPinHash,
+    getSettingsPinHash,
     updatePins,
     isDefaultPin,
     isDefaultAdminPin,
     isDefaultDisplayPin,
+    isDefaultSettingsPin,
     getPinGuardState,
     savePinGuardState,
     getPresets,

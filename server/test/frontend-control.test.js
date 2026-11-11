@@ -94,7 +94,7 @@ function createControlSandbox({ fetchImpl } = {}) {
     'save-device-config-btn', 'resync-btn', 'disk-free-label', 'video-list-container',
     'preset-editor-list', 'add-preset-btn', 'save-presets-btn',
     'change-pin-form', 'current-pin-input', 'new-admin-pin-input', 'new-display-pin-input',
-    'confirm-pin-input', 'change-pin-error',
+    'new-settings-pin-input', 'change-pin-error',
     'settings-server-api', 'settings-server-ws', 'settings-server-input',
     'settings-server-error', 'settings-reset-server-btn', 'settings-save-server-btn'
   ];
@@ -298,8 +298,10 @@ describe('frontend control Phase 3', () => {
       });
 
       const playBtn = elements.get('play-btn');
+      const playIcon = elements.get('play-icon');
       assert.equal(playBtn.disabled, false);
       assert.equal(playBtn.classList.contains('ready'), true);
+      assert.equal(playIcon.src, './assets/play-ready.webp');
       assert.equal(elements.get('time-text').textContent, '0:00 / 2:30');
 
       // Short tap (<600ms) -> NO play sent
@@ -356,6 +358,7 @@ describe('frontend control Phase 3', () => {
         }
       });
       assert.equal(playBtn.classList.contains('playing'), true);
+      assert.equal(playIcon.src, './assets/play-playing.webp');
 
       playBtn.dispatch('pointerdown', { pointerId: 4 });
       advancePerf(700);
@@ -386,6 +389,17 @@ describe('frontend control Phase 3', () => {
           }
           if (url.endsWith('/presets')) {
             return { ok: true, status: 200, json: async () => ({ ok: true, presets: ['잠시 후 입장'] }) };
+          }
+          if (url.endsWith('/settings/pin') && opts.method === 'PUT') {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                ok: true,
+                token: 'adm-tok-rotated',
+                controlToken: 'ctrl-tok-rotated'
+              })
+            };
           }
           if (url.endsWith('/settings')) {
             return {
@@ -434,8 +448,8 @@ describe('frontend control Phase 3', () => {
       elements.get('control-server-close').dispatch('click');
       assert.equal(elements.get('control-server-modal').classList.contains('hidden'), true);
 
-      // Register control device with staff PIN
-      elements.get('pin-input').value = 'admincannotgohome31';
+      // Register control device with admin login PIN
+      elements.get('pin-input').value = 'admincgo2631';
       elements.get('auth-form').dispatch('submit');
       await new Promise((r) => setTimeout(r, 30));
       assert.ok(local.get('ghost_control_token'));
@@ -477,11 +491,21 @@ describe('frontend control Phase 3', () => {
       assert.equal(elements.get('auth-modal').classList.contains('hidden'), false);
       assert.equal(elements.get('auth-corner-gear-btn').classList.contains('hidden'), true);
 
-      elements.get('pin-input').value = 'admincannotgohome31';
+      elements.get('pin-input').value = 'adminsetmg';
       elements.get('auth-form').dispatch('submit');
       await new Promise((r) => setTimeout(r, 30));
       assert.equal(session.get('ghost_admin_token'), 'adm-tok-1');
       assert.equal(elements.get('settings-modal').classList.contains('hidden'), false);
+
+      // Rotating PIN inside Settings keeps Settings open without forcing re-login
+      elements.get('current-pin-input').value = 'adminsetmg';
+      elements.get('new-settings-pin-input').value = 'adminsetmg2';
+      elements.get('change-pin-form').dispatch('submit');
+      await new Promise((r) => setTimeout(r, 30));
+      assert.equal(elements.get('settings-modal').classList.contains('hidden'), false);
+      assert.equal(elements.get('auth-modal').classList.contains('hidden'), true);
+      assert.equal(session.get('ghost_admin_token'), 'adm-tok-rotated');
+      assert.equal(local.get('ghost_control_token'), 'ctrl-tok-rotated');
 
       // Switching to 서버 관리 tab inside Settings exposes server API & WS URLs
       const serverTab = tabBtns.find((b) => b.dataset.tab === 'server');
@@ -489,6 +513,11 @@ describe('frontend control Phase 3', () => {
       assert.equal(elements.get('tab-server').classList.contains('hidden'), false);
       assert.equal(elements.get('settings-server-api').textContent, 'http://localhost:3000');
       assert.equal(elements.get('settings-server-ws').textContent, 'ws://localhost:3000/ws');
+
+      // Leaving Settings clears the settings session token so next entry requires Settings PIN
+      elements.get('settings-close-btn').dispatch('click');
+      assert.equal(elements.get('settings-modal').classList.contains('hidden'), true);
+      assert.equal(session.get('ghost_admin_token'), undefined);
     } finally {
       cleanup();
     }

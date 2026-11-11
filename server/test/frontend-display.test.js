@@ -377,8 +377,11 @@ describe('frontend config, ws-client, and display Phase 2', () => {
         }
         if (url.endsWith('/auth')) {
           const body = JSON.parse(opts.body);
-          if (body.pin === 'admincannotgohome31' && body.scope === 'admin') {
-            return { ok: true, status: 200, json: async () => ({ ok: true, token: 'tok-admin', scope: 'admin' }) };
+          if (
+            (body.pin === 'admincgo2631' || body.pin === 'adminsetmg') &&
+            body.scope === 'diagnostics'
+          ) {
+            return { ok: true, status: 200, json: async () => ({ ok: true, token: 'tok-diag', scope: 'diagnostics' }) };
           }
           return { ok: false, status: 401, json: async () => ({ ok: false, error: 'invalid_pin' }) };
         }
@@ -447,13 +450,13 @@ describe('frontend config, ws-client, and display Phase 2', () => {
 
       // Experiencer PIN rejected for 5s corner admin gate; staff PIN opens diagnostics & 서버 관리 tab
       elements.get('corner-pin-modal').classList.remove('hidden');
-      elements.get('corner-pin-input').value = 'cannotgohome31';
+      elements.get('corner-pin-input').value = 'cgo2631';
       elements.get('corner-pin-form').dispatch('submit');
       await new Promise((r) => setTimeout(r, 20));
       assert.equal(elements.get('corner-info-modal').classList.contains('hidden'), true);
       assert.ok(elements.get('corner-pin-error').textContent.length > 0);
 
-      elements.get('corner-pin-input').value = 'admincannotgohome31';
+      elements.get('corner-pin-input').value = 'admincgo2631';
       elements.get('corner-pin-form').dispatch('submit');
       await new Promise((r) => setTimeout(r, 20));
       assert.equal(elements.get('corner-info-modal').classList.contains('hidden'), false);

@@ -224,17 +224,16 @@ body {
   position: relative;
   width: 176px;
   height: 176px;
+  padding: 0;
   border-radius: 50%;
   border: none;
-  background: var(--gray);
-  color: #ffffff;
-  font-size: 52px;
+  background: rgba(7, 8, 11, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
-  transition: transform 0.12s ease, background 0.2s ease, opacity 0.2s ease;
+  transition: transform 0.12s ease, opacity 0.2s ease;
   touch-action: none;
 }
 
@@ -242,23 +241,35 @@ body {
   transform: scale(0.95);
 }
 
-.play-btn.ready {
-  background: var(--green);
-}
-
+.play-btn.ready,
 .play-btn.playing {
-  background: var(--red);
+  opacity: 1;
 }
 
 .play-btn.disabled {
-  background: var(--gray);
-  opacity: 0.72;
   cursor: not-allowed;
+}
+
+.play-icon-img {
+  position: relative;
+  z-index: 1;
+  width: 152px;
+  height: 152px;
+  border-radius: 50%;
+  object-fit: contain;
+  pointer-events: none;
+  transition: filter 0.2s ease, opacity 0.2s ease;
+}
+
+.play-btn.disabled .play-icon-img {
+  opacity: 0.42;
+  filter: grayscale(0.85);
 }
 
 .play-ring {
   position: absolute;
   inset: 0;
+  z-index: 2;
   width: 176px;
   height: 176px;
   transform: rotate(-90deg);

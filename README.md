@@ -48,4 +48,4 @@ npm run start:display-preview
 ```
 - 관리자/조종기기 서버: `http://0.0.0.0:3000` (`/` → `control.html`)
 - 체험자 화면 전용 서버: `http://0.0.0.0:3001` (`/` → `display.html?id=A`, `?id=B`)
-- 기본 PIN: 스태프/관리자 `admincannotgohome31` (`INITIAL_ADMIN_PIN`), 체험자 `cannotgohome31` (`INITIAL_DISPLAY_PIN`) — 운영 전 변경 권장
+- 기본 PIN: 관리자용 로그인 `admincgo2631` (`INITIAL_ADMIN_PIN`), 체험자용 `cgo2631` (`INITIAL_DISPLAY_PIN`), 설정탭 진입용 `adminsetmg` (`INITIAL_SETTINGS_PIN`) — 운영 전 변경 권장

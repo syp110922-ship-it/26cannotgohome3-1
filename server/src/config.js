@@ -85,12 +85,17 @@ function loadConfig(overrides = {}) {
         overrides.initialPin ??
         process.env.INITIAL_ADMIN_PIN ??
         process.env.INITIAL_PIN ??
-        'admincannotgohome31'
+        'admincgo2631'
     ),
     initialDisplayPin: String(
       overrides.initialDisplayPin ??
         process.env.INITIAL_DISPLAY_PIN ??
-        'cannotgohome31'
+        'cgo2631'
+    ),
+    initialSettingsPin: String(
+      overrides.initialSettingsPin ??
+        process.env.INITIAL_SETTINGS_PIN ??
+        'adminsetmg'
     ),
     pinMaxAttempts: Number(overrides.pinMaxAttempts ?? process.env.PIN_MAX_ATTEMPTS ?? 5),
     pinLockoutMs: Number(overrides.pinLockoutMs ?? process.env.PIN_LOCKOUT_MS ?? 60000),

@@ -576,7 +576,7 @@
       const res = await fetch(`${window.GHOST_CONFIG.apiBase}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: cornerPinInput.value, scope: 'admin' })
+        body: JSON.stringify({ pin: cornerPinInput.value, scope: 'diagnostics' })
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {

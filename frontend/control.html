@@ -42,7 +42,7 @@
           <circle class="play-ring-bg" cx="90" cy="90" r="82"></circle>
           <circle class="play-ring-fg" id="play-ring" cx="90" cy="90" r="82"></circle>
         </svg>
-        <span class="play-icon" id="play-icon">▶</span>
+        <img class="play-icon-img" id="play-icon" src="./assets/play-ready.webp" alt="재생" />
       </button>
       <div class="cooldown-label hidden" id="cooldown-label"></div>
     </section>
@@ -238,23 +238,23 @@
           <form class="settings-card" id="change-pin-form">
             <h3>PIN 변경</h3>
             <p class="modal-desc">
-              변경할 항목만 입력하면 됩니다. 변경 시 기존 기기 토큰은 만료되어 재등록이 필요합니다.
+              변경할 항목만 입력해 적용하세요. 설정탭에서 나가기 전까지는 다시 로그인하지 않고 계속 설정할 수 있습니다.
             </p>
             <div class="form-row">
-              <label for="current-pin-input">현재 스태프용 PIN (필수)</label>
+              <label for="current-pin-input">현재 설정탭 진입 PIN (필수)</label>
               <input type="password" id="current-pin-input" required autocomplete="off" />
             </div>
             <div class="form-row">
-              <label for="new-admin-pin-input">새 스태프용 PIN (4~64자, 변경 시 입력)</label>
+              <label for="new-admin-pin-input">새 관리자용 로그인 PIN (4~64자, 변경 시 입력)</label>
               <input type="password" id="new-admin-pin-input" maxlength="64" autocomplete="off" />
             </div>
             <div class="form-row">
-              <label for="new-display-pin-input">새 체험자용 PIN (4~64자, 변경 시 입력)</label>
+              <label for="new-display-pin-input">새 체험자용 로그인 PIN (4~64자, 변경 시 입력)</label>
               <input type="password" id="new-display-pin-input" maxlength="64" autocomplete="off" />
             </div>
             <div class="form-row">
-              <label for="confirm-pin-input">새 스태프용 PIN 확인 (스태프 PIN 변경 시)</label>
-              <input type="password" id="confirm-pin-input" maxlength="64" autocomplete="off" />
+              <label for="new-settings-pin-input">새 설정탭 진입 PIN (4~64자, 변경 시 입력)</label>
+              <input type="password" id="new-settings-pin-input" maxlength="64" autocomplete="off" />
             </div>
             <p class="error-text" id="change-pin-error"></p>
             <button type="submit" class="primary-btn">PIN 변경 적용</button>

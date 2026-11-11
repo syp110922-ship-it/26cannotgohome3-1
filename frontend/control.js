@@ -81,7 +81,7 @@
   const currentPinInput = document.getElementById('current-pin-input');
   const newAdminPinInput = document.getElementById('new-admin-pin-input');
   const newDisplayPinInput = document.getElementById('new-display-pin-input');
-  const confirmPinInput = document.getElementById('confirm-pin-input');
+  const newSettingsPinInput = document.getElementById('new-settings-pin-input');
   const changePinError = document.getElementById('change-pin-error');
 
   const settingsServerApi = document.getElementById('settings-server-api');
@@ -103,6 +103,10 @@
   let lastSentMsgAt = 0;
 
   let authMode = 'control'; // 'control' | 'admin'
+  let activeAdminToken = '';
+  let isSettingsOpen = false;
+  let isSavingSettings = false;
+  let pendingControlReauth = false;
   let wakeLock = null;
   let toastTimer = null;
   let settingsPollTimer = null;
@@ -268,15 +272,18 @@
     if (snapshot.state === 'READY' && client.isConnected()) {
       playBtn.classList.add('ready');
       playBtn.disabled = false;
-      playIcon.textContent = '▶';
+      playIcon.src = './assets/play-ready.webp';
+      playIcon.alt = '재생 (길게 누름)';
     } else if (snapshot.state === 'PLAYING' && client.isConnected()) {
       playBtn.classList.add('playing');
       playBtn.disabled = false;
-      playIcon.textContent = '■';
+      playIcon.src = './assets/play-playing.webp';
+      playIcon.alt = '재생 중 (길게 눌러 정지)';
     } else {
       playBtn.classList.add('disabled');
       playBtn.disabled = true;
-      playIcon.textContent = '▶';
+      playIcon.src = './assets/play-ready.webp';
+      playIcon.alt = '대기 중';
     }
 
     resyncBtn.disabled = snapshot.state === 'PLAYING';
@@ -455,9 +462,17 @@
       }
     },
     onAuthError: () => {
-      window.localStorage.removeItem(CONTROL_TOKEN_KEY);
+      if (isSavingSettings) return;
+      try {
+        window.localStorage.removeItem(CONTROL_TOKEN_KEY);
+      } catch {
+        // ignore
+      }
+      if (isSettingsOpen) {
+        pendingControlReauth = true;
+        return;
+      }
       closeMsgSheet();
-      closeSettingsModal();
       openAuthModal('control');
     }
   });
@@ -555,13 +570,15 @@
     authError.textContent = '';
     pinInput.value = '';
     if (mode === 'control') {
-      authTitle.textContent = '조종기기 등록';
-      authDesc.textContent = '조종기기 연결을 위해 스태프용 PIN을 입력해 주세요.';
+      authTitle.textContent = '관리자 로그인';
+      authDesc.textContent = '조종기기 연결을 위해 관리자용 로그인 PIN을 입력해 주세요.';
+      pinInput.placeholder = '관리자용 PIN 입력';
       authCancelBtn.classList.add('hidden');
       authCornerGearBtn.classList.remove('hidden');
     } else {
-      authTitle.textContent = '관리자 인증';
-      authDesc.textContent = '설정 화면을 열기 위해 스태프용 PIN을 입력해 주세요.';
+      authTitle.textContent = '설정 잠금 해제';
+      authDesc.textContent = '설정 화면 진입을 위해 설정탭 전용 PIN을 입력해 주세요.';
+      pinInput.placeholder = '설정탭 PIN 입력';
       authCancelBtn.classList.remove('hidden');
       authCornerGearBtn.classList.add('hidden');
     }
@@ -643,10 +660,15 @@
       authModal.classList.add('hidden');
 
       if (authMode === 'control') {
-        window.localStorage.setItem(CONTROL_TOKEN_KEY, data.token);
+        try {
+          window.localStorage.setItem(CONTROL_TOKEN_KEY, data.token);
+        } catch {
+          // ignore
+        }
+        pendingControlReauth = false;
         client.connect();
       } else {
-        window.sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+        setAdminToken(data.token);
         openSettingsModal();
       }
     } catch {
@@ -654,9 +676,34 @@
     }
   });
 
+  function getAdminToken() {
+    if (activeAdminToken) return activeAdminToken;
+    try {
+      const stored = window.sessionStorage.getItem(ADMIN_TOKEN_KEY) || '';
+      if (stored) activeAdminToken = stored;
+      return stored;
+    } catch {
+      return '';
+    }
+  }
+
+  function setAdminToken(token) {
+    activeAdminToken = token || '';
+    try {
+      if (activeAdminToken) {
+        window.sessionStorage.setItem(ADMIN_TOKEN_KEY, activeAdminToken);
+      } else {
+        window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+
   // Settings Modal (Section 4.6)
   async function openSettingsWithAuth() {
-    const adminToken = window.sessionStorage.getItem(ADMIN_TOKEN_KEY);
+    if (isSettingsOpen) return;
+    const adminToken = getAdminToken();
     if (!adminToken) {
       openAuthModal('admin');
       return;
@@ -666,13 +713,13 @@
         headers: { Authorization: `Bearer ${adminToken}` }
       });
       if (!res.ok) {
-        window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+        setAdminToken('');
         openAuthModal('admin');
         return;
       }
       const data = await res.json();
       if (data.scope !== 'admin') {
-        window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+        setAdminToken('');
         openAuthModal('admin');
         return;
       }
@@ -683,7 +730,7 @@
   }
 
   function getAdminHeaders(json = false) {
-    const token = window.sessionStorage.getItem(ADMIN_TOKEN_KEY) || '';
+    const token = getAdminToken();
     const headers = { Authorization: `Bearer ${token}` };
     if (json) headers['Content-Type'] = 'application/json';
     return headers;
@@ -788,17 +835,21 @@
   }
 
   async function loadSettingsData() {
+    const usedToken = getAdminToken();
+    if (!usedToken) return;
     try {
       const [settingsRes, videosRes, statusRes] = await Promise.all([
-        fetch(`${window.GHOST_CONFIG.apiBase}/settings`, { headers: getAdminHeaders() }),
-        fetch(`${window.GHOST_CONFIG.apiBase}/videos`, { headers: getAdminHeaders() }),
-        fetch(`${window.GHOST_CONFIG.apiBase}/status`, { headers: getAdminHeaders() })
+        fetch(`${window.GHOST_CONFIG.apiBase}/settings`, { headers: { Authorization: `Bearer ${usedToken}` } }),
+        fetch(`${window.GHOST_CONFIG.apiBase}/videos`, { headers: { Authorization: `Bearer ${usedToken}` } }),
+        fetch(`${window.GHOST_CONFIG.apiBase}/status`, { headers: { Authorization: `Bearer ${usedToken}` } })
       ]);
 
+      if (usedToken !== getAdminToken() || isSavingSettings) {
+        return;
+      }
+
       if (settingsRes.status === 401 || settingsRes.status === 403) {
-        window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
-        closeSettingsModal();
-        openAuthModal('admin');
+        showToast('설정 인증 확인에 실패했습니다. 설정탭을 나간 후 다시 로그인해 주세요.');
         return;
       }
 
@@ -827,19 +878,17 @@
     }
   }
 
-  function openSettingsModal() {
-    settingsModal.classList.remove('hidden');
-    loadSettingsData();
+  function startSettingsPolling() {
     if (settingsPollTimer) clearInterval(settingsPollTimer);
     settingsPollTimer = setInterval(async () => {
+      if (!isSettingsOpen || isSavingSettings) return;
+      const usedToken = getAdminToken();
+      if (!usedToken) return;
       try {
         const res = await fetch(`${window.GHOST_CONFIG.apiBase}/status`, {
-          headers: getAdminHeaders()
+          headers: { Authorization: `Bearer ${usedToken}` }
         });
-        if (res.status === 401 || res.status === 403) {
-          window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
-          closeSettingsModal();
-          openAuthModal('admin');
+        if (usedToken !== getAdminToken() || isSavingSettings || !isSettingsOpen) {
           return;
         }
         if (res.ok) {
@@ -852,12 +901,25 @@
     }, 2000);
   }
 
+  function openSettingsModal() {
+    isSettingsOpen = true;
+    settingsModal.classList.remove('hidden');
+    loadSettingsData();
+    startSettingsPolling();
+  }
+
   function closeSettingsModal() {
     if (settingsPollTimer) {
       clearInterval(settingsPollTimer);
       settingsPollTimer = null;
     }
+    isSettingsOpen = false;
+    setAdminToken('');
     settingsModal.classList.add('hidden');
+    if (pendingControlReauth) {
+      pendingControlReauth = false;
+      openAuthModal('control');
+    }
   }
 
   settingsCloseBtn.addEventListener('click', closeSettingsModal);
@@ -884,7 +946,6 @@
   });
 
   adminLogoutBtn.addEventListener('click', () => {
-    window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
     closeSettingsModal();
     showToast('설정이 잠금되었습니다.');
   });
@@ -970,19 +1031,24 @@
 
     const nextAdmin = newAdminPinInput.value.trim();
     const nextDisplay = newDisplayPinInput.value.trim();
-    if (!nextAdmin && !nextDisplay) {
-      changePinError.textContent = '변경할 스태프용 PIN 또는 체험자용 PIN을 입력해 주세요.';
+    const nextSettings = newSettingsPinInput.value.trim();
+    if (!nextAdmin && !nextDisplay && !nextSettings) {
+      changePinError.textContent = '변경할 PIN을 최소 1개 이상 입력해 주세요.';
       return;
     }
-    if (nextAdmin && nextAdmin !== confirmPinInput.value.trim()) {
-      changePinError.textContent = '새 스태프용 PIN 확인이 일치하지 않습니다.';
-      return;
+
+    isSavingSettings = true;
+    if (settingsPollTimer) {
+      clearInterval(settingsPollTimer);
+      settingsPollTimer = null;
     }
+    client.disconnect();
 
     try {
       const payload = { currentPin: currentPinInput.value };
       if (nextAdmin) payload.newAdminPin = nextAdmin;
       if (nextDisplay) payload.newDisplayPin = nextDisplay;
+      if (nextSettings) payload.newSettingsPin = nextSettings;
 
       const res = await fetch(`${window.GHOST_CONFIG.apiBase}/settings/pin`, {
         method: 'PUT',
@@ -994,26 +1060,35 @@
         if (data.error === 'pin_locked') {
           changePinError.textContent = `잠금 상태입니다 (${data.retryAfterSec}초 후 재시도)`;
         } else if (typeof data.attemptsRemaining === 'number') {
-          changePinError.textContent = `현재 스태프 PIN이 올바르지 않습니다. (남은 시도 ${data.attemptsRemaining}회)`;
+          changePinError.textContent = `현재 설정탭 PIN이 올바르지 않습니다. (남은 시도 ${data.attemptsRemaining}회)`;
         } else {
           changePinError.textContent = 'PIN 형식을 확인해 주세요 (4~64자).';
         }
         return;
       }
 
-      window.sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+      setAdminToken(data.token);
       if (data.controlToken) {
-        window.localStorage.setItem(CONTROL_TOKEN_KEY, data.controlToken);
+        try {
+          window.localStorage.setItem(CONTROL_TOKEN_KEY, data.controlToken);
+        } catch {
+          // ignore
+        }
       }
+      pendingControlReauth = false;
       currentPinInput.value = '';
       newAdminPinInput.value = '';
       newDisplayPinInput.value = '';
-      confirmPinInput.value = '';
-      client.disconnect();
-      client.connect();
-      showToast('PIN이 변경되었습니다. 체험자 기기는 재등록이 필요합니다.');
+      newSettingsPinInput.value = '';
+      showToast('PIN이 저장되었습니다. 설정탭을 나가기 전까지 유지됩니다.');
     } catch {
       changePinError.textContent = '서버 통신 오류';
+    } finally {
+      isSavingSettings = false;
+      client.connect();
+      if (isSettingsOpen) {
+        startSettingsPolling();
+      }
     }
   });
 
