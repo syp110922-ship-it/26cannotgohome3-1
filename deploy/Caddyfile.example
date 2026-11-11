@@ -1,0 +1,12 @@
+# Example Caddyfile for Oracle Cloud Always Free VM + DuckDNS
+# Replace your-subdomain.duckdns.org with your actual DuckDNS domain.
+
+your-subdomain.duckdns.org {
+    encode zstd gzip
+
+    # Reverse proxy all API, video streaming, and WebSocket (/ws) requests to Node.js
+    reverse_proxy 127.0.0.1:3000 {
+        # Keep WebSocket & large file streaming unbuffered
+        flush_interval -1
+    }
+}

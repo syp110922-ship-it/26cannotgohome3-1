@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#000000" />
+  <title>Display</title>
+  <link rel="stylesheet" href="./display.css" />
+</head>
+<body>
+  <main class="black-stage" id="black-stage">
+    <video
+      id="player"
+      class="video-player"
+      playsinline
+      disablepictureinpicture
+      controlslist="nodownload noplaybackrate"
+      preload="auto"
+    ></video>
+
+    <div class="msg-overlay hidden" id="msg-overlay" aria-live="polite"></div>
+
+    <!-- Invisible 5-second long-press corner trigger for staff diagnostics -->
+    <div class="admin-corner" id="admin-corner" aria-hidden="true"></div>
+  </main>
+
+  <!-- Initial Staff Setup Screen (server URL hidden; accessible only via corner gear -> 서버 관리) -->
+  <section class="setup-screen" id="setup-screen">
+    <div class="setup-card">
+      <h1 id="device-title">체험자 화면</h1>
+      <div class="device-switch-row" id="device-switch-row">
+        <a class="device-switch-link" id="switch-A" href="?id=A">기기 A</a>
+        <a class="device-switch-link" id="switch-B" href="?id=B">기기 B</a>
+      </div>
+      <p class="setup-desc" id="setup-desc">
+        스태프 초기 세팅 화면입니다. 시작을 누르면 전체화면, 오디오 잠금 해제, 화면 켜짐 유지를 활성화한 뒤 검은 대기 화면으로 전환됩니다.
+      </p>
+
+      <div class="pin-row hidden" id="pin-row">
+        <input
+          type="password"
+          id="display-pin"
+          placeholder="체험자용 PIN 입력 (최초 1회)"
+          autocomplete="off"
+        />
+      </div>
+
+      <p class="setup-error" id="setup-error"></p>
+      <button class="start-btn" id="start-btn" type="button">시작</button>
+    </div>
+
+    <button
+      type="button"
+      class="corner-gear-btn"
+      id="setup-corner-gear-btn"
+      aria-label="서버 관리"
+      title="서버 관리"
+    >
+      <img src="./assets/gear.webp" alt="" />
+    </button>
+  </section>
+
+  <!-- Pre-start Server Management Modal (opened only via corner gear) -->
+  <div class="modal-backdrop hidden" id="display-server-modal">
+    <section class="modal-card" aria-label="서버 관리">
+      <div class="modal-head-row">
+        <span class="server-tab-pill">서버 관리</span>
+        <button type="button" class="close-x" id="display-server-close" aria-label="닫기">✕</button>
+      </div>
+      <div class="form-row">
+        <label>현재 연결 서버</label>
+        <div class="server-pill" id="setup-server-current"></div>
+      </div>
+      <div class="form-row">
+        <label for="server-url-input">서버 주소 변경</label>
+        <input
+          type="url"
+          id="server-url-input"
+          placeholder="https://your-subdomain.duckdns.org"
+          autocomplete="off"
+        />
+      </div>
+      <p class="setup-error" id="display-server-error"></p>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="reset-server-btn">기본값</button>
+        <button type="button" class="primary-btn" id="save-server-btn">적용</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- Hidden Admin PIN Prompt (after 5s corner hold; requires staff/admin PIN) -->
+  <div class="modal-backdrop hidden" id="corner-pin-modal">
+    <form class="modal-card" id="corner-pin-form">
+      <h2>관리자 확인</h2>
+      <p class="modal-desc">기기 정보 확인을 위해 관리자용 PIN을 입력해 주세요.</p>
+      <input
+        type="password"
+        id="corner-pin-input"
+        placeholder="관리자 PIN 입력"
+        autocomplete="off"
+        required
+      />
+      <p class="setup-error" id="corner-pin-error"></p>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="corner-pin-cancel">취소</button>
+        <button type="submit" class="primary-btn">확인</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Hidden Admin Info Modal (server URL shown ONLY inside 서버 관리 tab) -->
+  <div class="modal-backdrop hidden" id="corner-info-modal">
+    <div class="modal-card info-card">
+      <div class="modal-head-row">
+        <h2>관리자 진단</h2>
+        <button type="button" class="close-x" id="info-close-btn" aria-label="닫기">✕</button>
+      </div>
+
+      <div class="info-tabs">
+        <button type="button" class="info-tab-btn active" data-info-tab="status">기기 상태</button>
+        <button type="button" class="info-tab-btn" data-info-tab="server">서버 관리</button>
+      </div>
+
+      <div id="info-pane-status">
+        <dl class="info-list">
+          <div><dt>기기 ID</dt><dd id="info-device-id">-</dd></div>
+          <div><dt>WS 연결</dt><dd id="info-ws-status">-</dd></div>
+          <div><dt>RTT / 시계 오차</dt><dd id="info-clock-sync">-</dd></div>
+          <div><dt>전체화면 / WakeLock</dt><dd id="info-device-locks">-</dd></div>
+          <div><dt>활성 영상</dt><dd id="info-video-state">-</dd></div>
+        </dl>
+        <div class="info-btn-grid">
+          <button type="button" class="secondary-btn" id="info-fullscreen-btn">전체화면 복구</button>
+          <button type="button" class="secondary-btn" id="info-reconnect-btn">재연결</button>
+          <button type="button" class="danger-btn" id="info-reset-token-btn">기기 등록 초기화</button>
+        </div>
+      </div>
+
+      <div class="hidden" id="info-pane-server">
+        <div class="form-row">
+          <label>현재 API 서버</label>
+          <div class="server-pill" id="info-server-url">-</div>
+        </div>
+        <div class="form-row">
+          <label>현재 WebSocket</label>
+          <div class="server-pill" id="info-ws-url">-</div>
+        </div>
+        <div class="form-row">
+          <label for="info-server-input">서버 주소 변경</label>
+          <input type="url" id="info-server-input" placeholder="https://your-subdomain.duckdns.org" autocomplete="off" />
+        </div>
+        <p class="setup-error" id="info-server-error"></p>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="info-server-reset-btn">기본값</button>
+          <button type="button" class="primary-btn" id="info-server-save-btn">적용</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./config.js"></script>
+  <script src="./shared/ws-client.js"></script>
+  <script src="./shared/video-cache.js"></script>
+  <script src="./display.js"></script>
+</body>
+</html>

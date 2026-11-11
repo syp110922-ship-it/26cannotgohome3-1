@@ -1,0 +1,21 @@
+{
+  "name": "haunted-house-sync",
+  "version": "0.1.0",
+  "description": "Haunted house synchronized dual-tablet remote video playback system",
+  "private": true,
+  "type": "commonjs",
+  "main": "server/src/index.js",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node --no-warnings server/src/index.js",
+    "start:display-preview": "node --no-warnings server/src/display-preview.js",
+    "dev": "node --no-warnings --watch server/src/index.js",
+    "test": "node --no-warnings --test server/test/*.test.js"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=Haunted House Remote Video Sync Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/haunted-house-sync
+EnvironmentFile=/opt/haunted-house-sync/.env
+ExecStart=/usr/bin/node --no-warnings server/src/index.js
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

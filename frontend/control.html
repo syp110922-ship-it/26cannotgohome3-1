@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0a0d" />
+  <title>귀신의집 조종기</title>
+  <link rel="stylesheet" href="./control.css" />
+</head>
+<body>
+  <div class="bg-stage" aria-hidden="true"></div>
+  <div class="bg-overlay" aria-hidden="true"></div>
+
+  <main class="control-shell">
+    <header class="top-bar">
+      <div class="device-dots">
+        <div class="dot-pill" id="dot-wrap-A">
+          <span class="dot red" id="dot-A"></span>
+          <span class="dot-label">A</span>
+          <span class="dot-dl hidden" id="dl-A"></span>
+        </div>
+        <div class="dot-pill" id="dot-wrap-B">
+          <span class="dot red" id="dot-B"></span>
+          <span class="dot-label">B</span>
+          <span class="dot-dl hidden" id="dl-B"></span>
+        </div>
+        <span class="conn-pill hidden" id="conn-pill">재연결 중...</span>
+      </div>
+
+      <button class="settings-hold-btn" id="settings-btn" type="button" aria-label="설정 (3초 길게 누름)">
+        <svg class="hold-ring" viewBox="0 0 56 56" aria-hidden="true">
+          <circle class="hold-ring-bg" cx="28" cy="28" r="24"></circle>
+          <circle class="hold-ring-fg" id="settings-ring" cx="28" cy="28" r="24"></circle>
+        </svg>
+        <img class="gear-img" src="./assets/gear.webp" alt="설정" />
+      </button>
+    </header>
+
+    <section class="center-stage">
+      <button class="play-btn disabled" id="play-btn" type="button" disabled aria-label="길게 눌러 재생 또는 정지">
+        <svg class="play-ring" viewBox="0 0 360 260" preserveAspectRatio="none" aria-hidden="true">
+          <rect class="play-ring-bg" x="5" y="5" width="350" height="250" rx="34" pathLength="100"></rect>
+          <rect class="play-ring-fg" id="play-ring" x="5" y="5" width="350" height="250" rx="34" pathLength="100"></rect>
+        </svg>
+        <img class="play-icon-img" id="play-icon" src="./assets/play-ready.webp" alt="재생" />
+        <span class="play-action-hint" id="play-hint">기기 연결 대기 중</span>
+      </button>
+      <div class="cooldown-label hidden" id="cooldown-label"></div>
+    </section>
+
+    <footer class="bottom-bar">
+      <div class="timeline-row">
+        <div class="timeline-track" aria-readonly="true">
+          <div class="timeline-fill" id="timeline-fill"></div>
+          <div class="timeline-thumb" id="timeline-thumb"></div>
+        </div>
+        <div class="time-text" id="time-text">0:00 / 0:00</div>
+      </div>
+
+      <div class="action-row">
+        <button class="msg-btn" id="msg-btn" type="button">💬 메시지</button>
+      </div>
+    </footer>
+  </main>
+
+  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Message Bottom Sheet -->
+  <div class="sheet-backdrop hidden" id="msg-sheet-backdrop">
+    <section class="bottom-sheet" id="msg-sheet" aria-label="안내 메시지 전송">
+      <div class="sheet-header">
+        <h2>체험자 안내 메시지</h2>
+        <button type="button" class="close-x" id="msg-sheet-close" aria-label="닫기">✕</button>
+      </div>
+
+      <div id="msg-select-step">
+        <div class="preset-grid" id="preset-grid"></div>
+        <form class="custom-msg-row" id="custom-msg-form">
+          <input
+            type="text"
+            id="custom-msg-input"
+            maxlength="200"
+            placeholder="직접 메시지 입력..."
+            autocomplete="off"
+          />
+          <button type="submit" class="secondary-btn">선택</button>
+        </form>
+      </div>
+
+      <div class="hidden" id="msg-confirm-step">
+        <p class="confirm-caption">다음 메시지를 체험자 기기에 전송할까요? (5초 표시)</p>
+        <div class="confirm-preview" id="msg-confirm-preview"></div>
+        <div class="confirm-actions">
+          <button type="button" class="secondary-btn" id="msg-cancel-btn">취소</button>
+          <button type="button" class="primary-btn" id="msg-send-btn">보내기</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- PIN Auth Modal (server URL hidden; accessible only via small corner gear -> 서버 관리) -->
+  <div class="modal-backdrop hidden" id="auth-modal">
+    <form class="modal-card" id="auth-form">
+      <h2 id="auth-title">스태프 인증</h2>
+      <p class="modal-desc" id="auth-desc">조종기기 연결을 위해 스태프용 PIN을 입력해 주세요.</p>
+      <input
+        type="password"
+        id="pin-input"
+        placeholder="스태프 PIN 입력"
+        autocomplete="off"
+        required
+      />
+      <p class="error-text" id="auth-error"></p>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn hidden" id="auth-cancel-btn">취소</button>
+        <button class="primary-btn" type="submit" id="auth-submit-btn">확인</button>
+      </div>
+    </form>
+
+    <button
+      type="button"
+      class="corner-gear-btn"
+      id="auth-corner-gear-btn"
+      aria-label="서버 관리"
+      title="서버 관리"
+    >
+      <img src="./assets/gear.webp" alt="" />
+    </button>
+  </div>
+
+  <!-- Pre-auth Server Management Modal (opened only via corner gear) -->
+  <div class="modal-backdrop hidden" id="control-server-modal">
+    <section class="modal-card server-mgmt-card" aria-label="서버 관리">
+      <div class="sheet-header">
+        <span class="server-tab-pill">서버 관리</span>
+        <button type="button" class="close-x" id="control-server-close" aria-label="닫기">✕</button>
+      </div>
+      <div class="form-row">
+        <label>현재 연결 서버</label>
+        <div class="server-pill" id="preauth-server-current"></div>
+      </div>
+      <div class="form-row">
+        <label for="control-server-input">서버 주소 변경</label>
+        <input
+          type="url"
+          id="control-server-input"
+          placeholder="https://your-subdomain.duckdns.org"
+          autocomplete="off"
+        />
+      </div>
+      <p class="error-text" id="control-server-error"></p>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="control-reset-server-btn">기본값</button>
+        <button type="button" class="primary-btn" id="control-save-server-btn">적용</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- Settings Modal (3s hold on gear + admin PIN) -->
+  <div class="modal-backdrop hidden" id="settings-modal">
+    <section class="settings-panel" aria-label="관리자 설정">
+      <header class="settings-header">
+        <h2>관리자 설정</h2>
+        <div class="settings-header-actions">
+          <button type="button" class="secondary-btn small" id="fullscreen-btn">전체화면</button>
+          <button type="button" class="secondary-btn small" id="admin-logout-btn">잠금</button>
+          <button type="button" class="close-x" id="settings-close-btn" aria-label="설정 닫기">✕</button>
+        </div>
+      </header>
+
+      <nav class="settings-tabs" role="tablist">
+        <button type="button" class="tab-btn active" data-tab="devices">기기 상태</button>
+        <button type="button" class="tab-btn" data-tab="videos">영상 관리</button>
+        <button type="button" class="tab-btn" data-tab="presets">프리셋 편집</button>
+        <button type="button" class="tab-btn" data-tab="pin">PIN 변경</button>
+        <button type="button" class="tab-btn" data-tab="logs">로그 기록</button>
+        <button type="button" class="tab-btn" data-tab="server">서버 관리</button>
+      </nav>
+
+      <div class="settings-body">
+        <!-- Tab 1: Device Status & Sync Settings -->
+        <div class="tab-pane" id="tab-devices">
+          <div class="device-detail-grid" id="device-detail-grid"></div>
+
+          <div class="settings-card">
+            <h3>운영 구성 및 이어폰 동기화</h3>
+            <div class="form-row">
+              <label for="required-displays-select">필수 체험자 기기</label>
+              <select id="required-displays-select">
+                <option value="A,B">A + B (2대 동시)</option>
+                <option value="A">A만 사용 (1대)</option>
+                <option value="B">B만 사용 (1대)</option>
+              </select>
+            </div>
+            <div class="offset-grid">
+              <div class="form-row">
+                <label for="offset-A-input">A 오디오 보정 (ms)</label>
+                <input type="number" id="offset-A-input" min="-2000" max="2000" step="10" value="0" />
+              </div>
+              <div class="form-row">
+                <label for="offset-B-input">B 오디오 보정 (ms)</label>
+                <input type="number" id="offset-B-input" min="-2000" max="2000" step="10" value="0" />
+              </div>
+            </div>
+            <p class="modal-desc">
+              에어팟·블루투스 헤드셋 사용 시 한쪽이 늦게 들리면 지연되는 기기를 -150 ~ -250ms로 당겨 맞출 수 있습니다.
+            </p>
+            <div class="settings-actions">
+              <button type="button" class="secondary-btn small" id="offset-preset-wired">유선 기본 (0ms)</button>
+              <button type="button" class="secondary-btn small" id="offset-preset-bt-a">A만 블루투스 (-180ms)</button>
+              <button type="button" class="secondary-btn small" id="offset-preset-bt-b">B만 블루투스 (-180ms)</button>
+            </div>
+            <div class="settings-actions">
+              <button type="button" class="primary-btn" id="save-device-config-btn">구성 저장</button>
+              <button type="button" class="danger-btn" id="resync-btn">강제 재동기화</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Video Management (Phase 4) -->
+        <div class="tab-pane hidden" id="tab-videos">
+          <div class="settings-card">
+            <div class="card-head-row">
+              <h3>새 영상 업로드 (MP4 · 용량 무제한)</h3>
+              <span class="muted-meta" id="disk-free-label">남은 용량 확인 중</span>
+            </div>
+            <div class="upload-row">
+              <input type="file" id="video-upload-input" class="sr-only-file-input" accept="video/mp4,.mp4" />
+              <label for="video-upload-input" class="upload-dropzone" id="video-upload-dropzone">
+                <img src="./assets/upload.webp" alt="" class="upload-dropzone-icon" />
+                <div class="upload-dropzone-text">
+                  <span class="upload-dropzone-title" id="video-upload-title">여기를 눌러 MP4 영상 파일을 선택하거나 끌어다 놓으세요</span>
+                  <span class="upload-dropzone-meta" id="video-upload-file-meta">선택된 파일 없음 · 용량 제한 없음 (H.264 / AAC MP4)</span>
+                </div>
+              </label>
+              <div class="settings-actions">
+                <button type="button" class="primary-btn" id="video-upload-btn">업로드 및 적용</button>
+                <button type="button" class="danger-btn hidden" id="video-upload-cancel-btn">업로드 취소</button>
+              </div>
+            </div>
+            <div class="upload-progress-wrap hidden" id="video-upload-progress-wrap">
+              <div class="upload-progress-track">
+                <div class="upload-progress-fill" id="video-upload-progress-fill"></div>
+              </div>
+              <div class="muted-meta" id="video-upload-progress-text">0%</div>
+            </div>
+            <p class="error-text" id="video-upload-error"></p>
+          </div>
+
+          <div class="settings-card">
+            <div class="card-head-row">
+              <h3>보관 중인 영상 (활성 1개 + 이전 최대 3개)</h3>
+              <div class="settings-actions">
+                <button type="button" class="primary-btn small" id="booth-test-play-btn">A/B 기기 테스트 재생</button>
+                <button type="button" class="danger-btn small" id="booth-test-stop-btn">테스트 정지</button>
+              </div>
+            </div>
+            <div id="video-list-container" class="video-list"></div>
+          </div>
+
+          <div class="settings-card hidden" id="video-preview-card">
+            <div class="card-head-row">
+              <h3 id="video-preview-title">영상 미리보기</h3>
+              <button type="button" class="secondary-btn small" id="video-preview-close">닫기</button>
+            </div>
+            <video id="video-preview-player" class="video-preview-player" controls playsinline preload="metadata"></video>
+          </div>
+        </div>
+
+        <!-- Tab 3: Preset Editor -->
+        <div class="tab-pane hidden" id="tab-presets">
+          <div class="settings-card">
+            <h3>메시지 프리셋 편집</h3>
+            <div id="preset-editor-list" class="preset-editor-list"></div>
+            <div class="settings-actions">
+              <button type="button" class="secondary-btn" id="add-preset-btn">+ 프리셋 추가</button>
+              <button type="button" class="primary-btn" id="save-presets-btn">프리셋 저장</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: PIN Change -->
+        <div class="tab-pane hidden" id="tab-pin">
+          <form class="settings-card" id="change-pin-form">
+            <h3>PIN 변경</h3>
+            <p class="modal-desc">
+              변경할 항목만 입력해 적용하세요. 설정탭에서 나가기 전까지는 다시 로그인하지 않고 계속 설정할 수 있습니다.
+            </p>
+            <div class="form-row">
+              <label for="current-pin-input">현재 설정탭 진입 PIN (필수)</label>
+              <input type="password" id="current-pin-input" required autocomplete="off" />
+            </div>
+            <div class="form-row">
+              <label for="new-admin-pin-input">새 관리자용 로그인 PIN (4~64자, 변경 시 입력)</label>
+              <input type="password" id="new-admin-pin-input" maxlength="64" autocomplete="off" />
+            </div>
+            <div class="form-row">
+              <label for="new-display-pin-input">새 체험자용 로그인 PIN (4~64자, 변경 시 입력)</label>
+              <input type="password" id="new-display-pin-input" maxlength="64" autocomplete="off" />
+            </div>
+            <div class="form-row">
+              <label for="new-settings-pin-input">새 설정탭 진입 PIN (4~64자, 변경 시 입력)</label>
+              <input type="password" id="new-settings-pin-input" maxlength="64" autocomplete="off" />
+            </div>
+            <p class="error-text" id="change-pin-error"></p>
+            <button type="submit" class="primary-btn">PIN 변경 적용</button>
+          </form>
+        </div>
+
+        <!-- Tab 5: Admin Logs (ONLY visible inside Admin Settings) -->
+        <div class="tab-pane hidden" id="tab-logs">
+          <div class="settings-card">
+            <div class="card-head-row">
+              <h3>관리자 로그 · 재생 이력</h3>
+              <div class="settings-actions">
+                <button type="button" class="secondary-btn small" id="logs-refresh-btn">새로고침</button>
+                <button type="button" class="danger-btn small" id="logs-clear-btn">로그 비우기</button>
+              </div>
+            </div>
+            <div class="logs-filter-row">
+              <button type="button" class="log-filter-btn active" data-log-filter="all">전체 로그</button>
+              <button type="button" class="log-filter-btn" data-log-filter="error">오류만</button>
+              <button type="button" class="log-filter-btn" data-log-filter="play">재생 이력</button>
+            </div>
+            <div id="logs-list-container" class="logs-list"></div>
+          </div>
+        </div>
+
+        <!-- Tab 6: Server Management (ONLY place where server URL is shown inside settings) -->
+        <div class="tab-pane hidden" id="tab-server">
+          <div class="settings-card">
+            <h3>서버 관리</h3>
+            <div class="form-row">
+              <label>현재 API 서버</label>
+              <div class="server-pill" id="settings-server-api"></div>
+            </div>
+            <div class="form-row">
+              <label>현재 WebSocket 서버</label>
+              <div class="server-pill" id="settings-server-ws"></div>
+            </div>
+            <div class="form-row">
+              <label for="settings-server-input">서버 주소 변경</label>
+              <input
+                type="url"
+                id="settings-server-input"
+                placeholder="https://your-subdomain.duckdns.org"
+                autocomplete="off"
+              />
+            </div>
+            <p class="error-text" id="settings-server-error"></p>
+            <div class="settings-actions">
+              <button type="button" class="secondary-btn" id="settings-reset-server-btn">기본값 복원</button>
+              <button type="button" class="primary-btn" id="settings-save-server-btn">주소 적용</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Friendly Error Popup (never exposes raw codes/logs on main screen) -->
+  <div class="modal-backdrop top-popup hidden" id="friendly-error-modal" role="alertdialog" aria-modal="true" aria-labelledby="friendly-error-title">
+    <div class="modal-card friendly-error-card">
+      <h2 id="friendly-error-title">오류가 발생했어요!</h2>
+      <p class="modal-desc friendly-error-desc" id="friendly-error-desc">
+        잠시만요. 연결 상태를 확인한 뒤 다시 시도해 주세요.
+      </p>
+      <div class="modal-actions">
+        <button type="button" class="primary-btn" id="friendly-error-close">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./config.js"></script>
+  <script src="./shared/ws-client.js"></script>
+  <script src="./control.js"></script>
+</body>
+</html>

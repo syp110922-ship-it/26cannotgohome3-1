@@ -1,0 +1,19 @@
+[build]
+  publish = "frontend"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    Permissions-Policy = "fullscreen=(self), screen-wake-lock=(self)"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+
+[[headers]]
+  for = "/config.js"
+  [headers.values]
+    Cache-Control = "no-store"
