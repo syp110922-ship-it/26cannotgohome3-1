@@ -45,13 +45,18 @@
   const authForm = document.getElementById('auth-form');
   const authTitle = document.getElementById('auth-title');
   const authDesc = document.getElementById('auth-desc');
-  const authServerUrl = document.getElementById('auth-server-url');
   const pinInput = document.getElementById('pin-input');
-  const controlServerOverride = document.getElementById('control-server-override');
-  const controlServerInput = document.getElementById('control-server-input');
-  const controlSaveServerBtn = document.getElementById('control-save-server-btn');
   const authError = document.getElementById('auth-error');
   const authCancelBtn = document.getElementById('auth-cancel-btn');
+  const authCornerGearBtn = document.getElementById('auth-corner-gear-btn');
+
+  const controlServerModal = document.getElementById('control-server-modal');
+  const controlServerClose = document.getElementById('control-server-close');
+  const preauthServerCurrent = document.getElementById('preauth-server-current');
+  const controlServerInput = document.getElementById('control-server-input');
+  const controlServerError = document.getElementById('control-server-error');
+  const controlResetServerBtn = document.getElementById('control-reset-server-btn');
+  const controlSaveServerBtn = document.getElementById('control-save-server-btn');
 
   const settingsModal = document.getElementById('settings-modal');
   const settingsCloseBtn = document.getElementById('settings-close-btn');
@@ -74,9 +79,17 @@
 
   const changePinForm = document.getElementById('change-pin-form');
   const currentPinInput = document.getElementById('current-pin-input');
-  const newPinInput = document.getElementById('new-pin-input');
+  const newAdminPinInput = document.getElementById('new-admin-pin-input');
+  const newDisplayPinInput = document.getElementById('new-display-pin-input');
   const confirmPinInput = document.getElementById('confirm-pin-input');
   const changePinError = document.getElementById('change-pin-error');
+
+  const settingsServerApi = document.getElementById('settings-server-api');
+  const settingsServerWs = document.getElementById('settings-server-ws');
+  const settingsServerInput = document.getElementById('settings-server-input');
+  const settingsServerError = document.getElementById('settings-server-error');
+  const settingsResetServerBtn = document.getElementById('settings-reset-server-btn');
+  const settingsSaveServerBtn = document.getElementById('settings-save-server-btn');
 
   let currentSnapshot = null;
   let presets = [
@@ -96,8 +109,11 @@
   let timelineTimer = null;
   let driftCorrectionSec = 0;
 
-  authServerUrl.textContent = `서버: ${window.GHOST_CONFIG.apiBase}`;
+  preauthServerCurrent.textContent = window.GHOST_CONFIG.apiBase;
   controlServerInput.value = window.GHOST_CONFIG.apiBase;
+  settingsServerApi.textContent = window.GHOST_CONFIG.apiBase;
+  settingsServerWs.textContent = window.GHOST_CONFIG.wsUrl;
+  settingsServerInput.value = window.GHOST_CONFIG.apiBase;
 
   window.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -540,14 +556,14 @@
     pinInput.value = '';
     if (mode === 'control') {
       authTitle.textContent = '조종기기 등록';
-      authDesc.textContent = '조종기기 연결을 위해 스태프 공용 PIN을 입력해 주세요.';
+      authDesc.textContent = '조종기기 연결을 위해 스태프용 PIN을 입력해 주세요.';
       authCancelBtn.classList.add('hidden');
-      controlServerOverride.classList.remove('hidden');
+      authCornerGearBtn.classList.remove('hidden');
     } else {
       authTitle.textContent = '관리자 인증';
-      authDesc.textContent = '설정 화면을 열기 위해 스태프 공용 PIN을 입력해 주세요.';
+      authDesc.textContent = '설정 화면을 열기 위해 스태프용 PIN을 입력해 주세요.';
       authCancelBtn.classList.remove('hidden');
-      controlServerOverride.classList.add('hidden');
+      authCornerGearBtn.classList.add('hidden');
     }
     authModal.classList.remove('hidden');
     setTimeout(() => pinInput.focus(), 50);
@@ -558,10 +574,40 @@
     pinInput.value = '';
   });
 
+  authCornerGearBtn.addEventListener('click', () => {
+    controlServerError.textContent = '';
+    preauthServerCurrent.textContent = window.GHOST_CONFIG.apiBase;
+    controlServerInput.value = window.GHOST_CONFIG.apiBase;
+    controlServerModal.classList.remove('hidden');
+  });
+
+  controlServerClose.addEventListener('click', () => {
+    controlServerModal.classList.add('hidden');
+  });
+
+  controlResetServerBtn.addEventListener('click', () => {
+    window.GHOST_CONFIG.clearServerOrigin();
+    window.location.reload();
+  });
+
   controlSaveServerBtn.addEventListener('click', () => {
-    authError.textContent = '';
+    controlServerError.textContent = '';
     if (!window.GHOST_CONFIG.setServerOrigin(controlServerInput.value)) {
-      authError.textContent = '올바른 https:// (또는 http://localhost) 서버 주소를 입력하세요.';
+      controlServerError.textContent = '올바른 https:// (또는 로컬 http://) 서버 주소를 입력하세요.';
+      return;
+    }
+    window.location.reload();
+  });
+
+  settingsResetServerBtn.addEventListener('click', () => {
+    window.GHOST_CONFIG.clearServerOrigin();
+    window.location.reload();
+  });
+
+  settingsSaveServerBtn.addEventListener('click', () => {
+    settingsServerError.textContent = '';
+    if (!window.GHOST_CONFIG.setServerOrigin(settingsServerInput.value)) {
+      settingsServerError.textContent = '올바른 https:// (또는 로컬 http://) 서버 주소를 입력하세요.';
       return;
     }
     window.location.reload();
@@ -922,28 +968,35 @@
     e.preventDefault();
     changePinError.textContent = '';
 
-    if (newPinInput.value.trim() !== confirmPinInput.value.trim()) {
-      changePinError.textContent = '새 PIN 확인이 일치하지 않습니다.';
+    const nextAdmin = newAdminPinInput.value.trim();
+    const nextDisplay = newDisplayPinInput.value.trim();
+    if (!nextAdmin && !nextDisplay) {
+      changePinError.textContent = '변경할 스태프용 PIN 또는 체험자용 PIN을 입력해 주세요.';
+      return;
+    }
+    if (nextAdmin && nextAdmin !== confirmPinInput.value.trim()) {
+      changePinError.textContent = '새 스태프용 PIN 확인이 일치하지 않습니다.';
       return;
     }
 
     try {
+      const payload = { currentPin: currentPinInput.value };
+      if (nextAdmin) payload.newAdminPin = nextAdmin;
+      if (nextDisplay) payload.newDisplayPin = nextDisplay;
+
       const res = await fetch(`${window.GHOST_CONFIG.apiBase}/settings/pin`, {
         method: 'PUT',
         headers: getAdminHeaders(true),
-        body: JSON.stringify({
-          currentPin: currentPinInput.value,
-          newPin: newPinInput.value.trim()
-        })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
         if (data.error === 'pin_locked') {
           changePinError.textContent = `잠금 상태입니다 (${data.retryAfterSec}초 후 재시도)`;
         } else if (typeof data.attemptsRemaining === 'number') {
-          changePinError.textContent = `현재 PIN이 올바르지 않습니다. (남은 시도 ${data.attemptsRemaining}회)`;
+          changePinError.textContent = `현재 스태프 PIN이 올바르지 않습니다. (남은 시도 ${data.attemptsRemaining}회)`;
         } else {
-          changePinError.textContent = '현재 PIN 또는 새 PIN 형식을 확인해 주세요.';
+          changePinError.textContent = 'PIN 형식을 확인해 주세요 (4~64자).';
         }
         return;
       }
@@ -953,11 +1006,12 @@
         window.localStorage.setItem(CONTROL_TOKEN_KEY, data.controlToken);
       }
       currentPinInput.value = '';
-      newPinInput.value = '';
+      newAdminPinInput.value = '';
+      newDisplayPinInput.value = '';
       confirmPinInput.value = '';
       client.disconnect();
       client.connect();
-      showToast('PIN이 변경되었습니다. 체험자 기기는 새 PIN으로 재등록하세요.');
+      showToast('PIN이 변경되었습니다. 체험자 기기는 재등록이 필요합니다.');
     } catch {
       changePinError.textContent = '서버 통신 오류';
     }

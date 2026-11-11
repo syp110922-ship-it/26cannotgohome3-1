@@ -91,11 +91,7 @@ if (require.main === module) {
       console.log(
         `[ghost-sync] Required displays: ${app.db.getRequiredDisplays().join(', ')}`
       );
-      if (app.db.isDefaultPin()) {
-        console.warn(
-          '[ghost-sync] WARNING: Default staff PIN is active. Change it in Settings before the event.'
-        );
-      }
+      console.log('[ghost-sync] Dual PIN auth ready (admin/control PIN + display PIN)');
     })
     .catch((err) => {
       console.error('[ghost-sync] Failed to start server:', err);

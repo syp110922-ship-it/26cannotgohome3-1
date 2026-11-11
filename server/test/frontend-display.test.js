@@ -22,9 +22,20 @@ function createMockElement(id = '') {
     duration: 10,
     currentTime: 0,
     offsetWidth: 100,
+    dataset: {},
     classList: {
       add: (...names) => names.forEach((n) => classes.add(n)),
       remove: (...names) => names.forEach((n) => classes.delete(n)),
+      toggle: (name, force) => {
+        if (force === undefined) {
+          if (classes.has(name)) classes.delete(name);
+          else classes.add(name);
+        } else if (force) {
+          classes.add(name);
+        } else {
+          classes.delete(name);
+        }
+      },
       contains: (name) => classes.has(name)
     },
     addEventListener(type, fn) {
@@ -67,21 +78,29 @@ function createDomSandbox({ search = '?id=A', origin = 'https://booth.netlify.ap
     'admin-corner',
     'setup-screen',
     'device-title',
-    'setup-server-url',
-    'server-url-input',
-    'save-server-btn',
+    'switch-A',
+    'switch-B',
     'pin-row',
     'display-pin',
     'setup-error',
     'start-btn',
+    'setup-corner-gear-btn',
+    'display-server-modal',
+    'display-server-close',
+    'setup-server-current',
+    'server-url-input',
+    'display-server-error',
+    'reset-server-btn',
+    'save-server-btn',
     'corner-pin-modal',
     'corner-pin-form',
     'corner-pin-input',
     'corner-pin-error',
     'corner-pin-cancel',
     'corner-info-modal',
+    'info-pane-status',
+    'info-pane-server',
     'info-device-id',
-    'info-server-url',
     'info-ws-status',
     'info-clock-sync',
     'info-device-locks',
@@ -89,15 +108,37 @@ function createDomSandbox({ search = '?id=A', origin = 'https://booth.netlify.ap
     'info-fullscreen-btn',
     'info-reconnect-btn',
     'info-reset-token-btn',
-    'info-close-btn'
+    'info-close-btn',
+    'info-server-url',
+    'info-ws-url',
+    'info-server-input',
+    'info-server-error',
+    'info-server-reset-btn',
+    'info-server-save-btn'
   ];
+
+  const hiddenByDefault = new Set([
+    'pin-row',
+    'display-server-modal',
+    'corner-pin-modal',
+    'corner-info-modal',
+    'info-pane-server',
+    'msg-overlay'
+  ]);
+
   for (const id of ids) {
     const el = createMockElement(id);
-    if (['pin-row', 'corner-pin-modal', 'corner-info-modal', 'msg-overlay'].includes(id)) {
+    if (hiddenByDefault.has(id)) {
       el.classList.add('hidden');
     }
     elements.set(id, el);
   }
+
+  const infoTabStatus = createMockElement('info-tab-status');
+  infoTabStatus.dataset.infoTab = 'status';
+  infoTabStatus.classList.add('active');
+  const infoTabServer = createMockElement('info-tab-server');
+  infoTabServer.dataset.infoTab = 'server';
 
   const createdSockets = [];
   class MockWebSocket {
@@ -223,6 +264,7 @@ function createDomSandbox({ search = '?id=A', origin = 'https://booth.netlify.ap
         requestFullscreen: async () => {}
       },
       getElementById: (id) => elements.get(id),
+      querySelectorAll: (sel) => (sel === '.info-tab-btn' ? [infoTabStatus, infoTabServer] : []),
       addEventListener: (t, fn) => {
         if (!docListeners.has(t)) docListeners.set(t, []);
         docListeners.get(t).push(fn);
@@ -240,7 +282,14 @@ function createDomSandbox({ search = '?id=A', origin = 'https://booth.netlify.ap
     activeIntervals.clear();
   }
 
-  return { context, elements, storage, createdSockets, cleanup };
+  return {
+    context,
+    elements,
+    infoTabs: { status: infoTabStatus, server: infoTabServer },
+    storage,
+    createdSockets,
+    cleanup
+  };
 }
 
 describe('frontend config, ws-client, and display Phase 2', () => {
@@ -318,8 +367,8 @@ describe('frontend config, ws-client, and display Phase 2', () => {
     }
   });
 
-  it('runs Phase 2 display playback, immediate stop blackout, XSS-safe message overlay, and 5s corner admin gate', async () => {
-    const { context, elements, storage, createdSockets, cleanup } = createDomSandbox({
+  it('runs Phase 2 display playback, corner gear server modal, and 5s corner admin 서버 관리 tab', async () => {
+    const { context, elements, infoTabs, storage, createdSockets, cleanup } = createDomSandbox({
       search: '?id=B',
       origin: 'http://localhost:3000',
       fetchImpl: async (url, opts) => {
@@ -328,7 +377,7 @@ describe('frontend config, ws-client, and display Phase 2', () => {
         }
         if (url.endsWith('/auth')) {
           const body = JSON.parse(opts.body);
-          if (body.pin === '9999') {
+          if (body.pin === 'admincannotgohome31' && body.scope === 'admin') {
             return { ok: true, status: 200, json: async () => ({ ok: true, token: 'tok-admin', scope: 'admin' }) };
           }
           return { ok: false, status: 401, json: async () => ({ ok: false, error: 'invalid_pin' }) };
@@ -343,6 +392,14 @@ describe('frontend config, ws-client, and display Phase 2', () => {
       vm.runInContext(fs.readFileSync(path.join(FRONTEND_DIR, 'config.js'), 'utf8'), context);
       vm.runInContext(fs.readFileSync(path.join(FRONTEND_DIR, 'shared/ws-client.js'), 'utf8'), context);
       vm.runInContext(fs.readFileSync(path.join(FRONTEND_DIR, 'display.js'), 'utf8'), context);
+
+      // Corner gear opens pre-start Server Management modal cleanly
+      assert.equal(elements.get('display-server-modal').classList.contains('hidden'), true);
+      elements.get('setup-corner-gear-btn').dispatch('click');
+      assert.equal(elements.get('display-server-modal').classList.contains('hidden'), false);
+      assert.equal(elements.get('setup-server-current').textContent, 'http://localhost:3000');
+      elements.get('display-server-close').dispatch('click');
+      assert.equal(elements.get('display-server-modal').classList.contains('hidden'), true);
 
       // Tap start button -> hides setup screen and opens WS
       elements.get('start-btn').dispatch('click');
@@ -388,20 +445,24 @@ describe('frontend config, ws-client, and display Phase 2', () => {
       corner.dispatch('pointerup', { clientX: 10, clientY: 10 });
       assert.equal(elements.get('corner-pin-modal').classList.contains('hidden'), true);
 
-      // Corner hold >= 5s (fast-check via overriding setTimeout inside sandbox? Even simpler: verify 5000ms timer opens modal or verify pin form!)
-      // Let's also verify PIN form authentication reveals Device ID & Server URL only after valid PIN
+      // Experiencer PIN rejected for 5s corner admin gate; staff PIN opens diagnostics & 서버 관리 tab
       elements.get('corner-pin-modal').classList.remove('hidden');
-      elements.get('corner-pin-input').value = '0000';
+      elements.get('corner-pin-input').value = 'cannotgohome31';
       elements.get('corner-pin-form').dispatch('submit');
       await new Promise((r) => setTimeout(r, 20));
       assert.equal(elements.get('corner-info-modal').classList.contains('hidden'), true);
       assert.ok(elements.get('corner-pin-error').textContent.length > 0);
 
-      elements.get('corner-pin-input').value = '9999';
+      elements.get('corner-pin-input').value = 'admincannotgohome31';
       elements.get('corner-pin-form').dispatch('submit');
       await new Promise((r) => setTimeout(r, 20));
       assert.equal(elements.get('corner-info-modal').classList.contains('hidden'), false);
       assert.equal(elements.get('info-device-id').textContent, 'B');
+      assert.equal(elements.get('info-pane-server').classList.contains('hidden'), true);
+
+      // Switching to 서버 관리 tab exposes server URL inside modal
+      infoTabs.server.dispatch('click');
+      assert.equal(elements.get('info-pane-server').classList.contains('hidden'), false);
       assert.equal(elements.get('info-server-url').textContent, 'http://localhost:3000');
     } finally {
       cleanup();

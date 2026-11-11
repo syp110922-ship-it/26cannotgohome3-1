@@ -10,6 +10,7 @@
   },
   "scripts": {
     "start": "node --no-warnings server/src/index.js",
+    "start:display-preview": "node --no-warnings server/src/display-preview.js",
     "dev": "node --no-warnings --watch server/src/index.js",
     "test": "node --no-warnings --test server/test/*.test.js"
   },

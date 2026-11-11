@@ -14,13 +14,21 @@
 
   const setupScreen = document.getElementById('setup-screen');
   const deviceTitle = document.getElementById('device-title');
-  const setupServerUrl = document.getElementById('setup-server-url');
-  const serverUrlInput = document.getElementById('server-url-input');
-  const saveServerBtn = document.getElementById('save-server-btn');
+  const switchA = document.getElementById('switch-A');
+  const switchB = document.getElementById('switch-B');
   const pinRow = document.getElementById('pin-row');
   const displayPin = document.getElementById('display-pin');
   const setupError = document.getElementById('setup-error');
   const startBtn = document.getElementById('start-btn');
+  const setupCornerGearBtn = document.getElementById('setup-corner-gear-btn');
+
+  const displayServerModal = document.getElementById('display-server-modal');
+  const displayServerClose = document.getElementById('display-server-close');
+  const setupServerCurrent = document.getElementById('setup-server-current');
+  const serverUrlInput = document.getElementById('server-url-input');
+  const displayServerError = document.getElementById('display-server-error');
+  const resetServerBtn = document.getElementById('reset-server-btn');
+  const saveServerBtn = document.getElementById('save-server-btn');
 
   const cornerPinModal = document.getElementById('corner-pin-modal');
   const cornerPinForm = document.getElementById('corner-pin-form');
@@ -29,8 +37,10 @@
   const cornerPinCancel = document.getElementById('corner-pin-cancel');
 
   const cornerInfoModal = document.getElementById('corner-info-modal');
+  const infoTabBtns = Array.from(document.querySelectorAll('.info-tab-btn'));
+  const infoPaneStatus = document.getElementById('info-pane-status');
+  const infoPaneServer = document.getElementById('info-pane-server');
   const infoDeviceId = document.getElementById('info-device-id');
-  const infoServerUrl = document.getElementById('info-server-url');
   const infoWsStatus = document.getElementById('info-ws-status');
   const infoClockSync = document.getElementById('info-clock-sync');
   const infoDeviceLocks = document.getElementById('info-device-locks');
@@ -39,11 +49,22 @@
   const infoReconnectBtn = document.getElementById('info-reconnect-btn');
   const infoResetTokenBtn = document.getElementById('info-reset-token-btn');
   const infoCloseBtn = document.getElementById('info-close-btn');
+  const infoServerUrl = document.getElementById('info-server-url');
+  const infoWsUrl = document.getElementById('info-ws-url');
+  const infoServerInput = document.getElementById('info-server-input');
+  const infoServerError = document.getElementById('info-server-error');
+  const infoServerResetBtn = document.getElementById('info-server-reset-btn');
+  const infoServerSaveBtn = document.getElementById('info-server-save-btn');
 
   document.title = `Display ${deviceId}`;
   deviceTitle.textContent = `체험자 화면 (${deviceId})`;
-  setupServerUrl.textContent = `서버: ${window.GHOST_CONFIG.apiBase}`;
+  switchA.classList.toggle('active', deviceId === 'A');
+  switchB.classList.toggle('active', deviceId === 'B');
+  setupServerCurrent.textContent = window.GHOST_CONFIG.apiBase;
   serverUrlInput.value = window.GHOST_CONFIG.apiBase;
+  infoServerUrl.textContent = window.GHOST_CONFIG.apiBase;
+  infoWsUrl.textContent = window.GHOST_CONFIG.wsUrl;
+  infoServerInput.value = window.GHOST_CONFIG.apiBase;
 
   // Input / gesture lockdown
   window.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -203,7 +224,6 @@
       return;
     }
 
-    // Phase 4 will attach GhostVideoCache (IndexedDB chunked Blob + incremental SHA-256).
     if (window.GhostVideoCache && typeof window.GhostVideoCache.ensureCached === 'function') {
       try {
         const blobUrl = await window.GhostVideoCache.ensureCached({
@@ -233,7 +253,6 @@
       }
     }
 
-    // Until Phase 4 /video/:id streaming is implemented, report cleanly without breaking state
     reportDeviceState({
       cached: [],
       dl: 0,
@@ -295,7 +314,7 @@
     try {
       player.currentTime = seekSec > 0.05 ? seekSec : 0;
     } catch {
-      // ignore seek error if not yet seekable
+      // ignore seek error
     }
 
     player.muted = false;
@@ -447,7 +466,34 @@
     }
   });
 
-  // Hidden 5-second corner hold + PIN admin modal
+  // Setup Screen Corner Gear -> Server Management Modal
+  setupCornerGearBtn.addEventListener('click', () => {
+    displayServerError.textContent = '';
+    setupServerCurrent.textContent = window.GHOST_CONFIG.apiBase;
+    serverUrlInput.value = window.GHOST_CONFIG.apiBase;
+    displayServerModal.classList.remove('hidden');
+  });
+
+  displayServerClose.addEventListener('click', () => {
+    displayServerModal.classList.add('hidden');
+  });
+
+  resetServerBtn.addEventListener('click', () => {
+    window.GHOST_CONFIG.clearServerOrigin();
+    window.location.reload();
+  });
+
+  saveServerBtn.addEventListener('click', () => {
+    displayServerError.textContent = '';
+    const ok = window.GHOST_CONFIG.setServerOrigin(serverUrlInput.value);
+    if (!ok) {
+      displayServerError.textContent = '올바른 https:// (또는 로컬 http://) 서버 주소를 입력하세요.';
+      return;
+    }
+    window.location.reload();
+  });
+
+  // Hidden 5-second corner hold + Staff PIN admin modal
   let cornerHoldTimer = null;
   let cornerStartPos = null;
 
@@ -498,7 +544,6 @@
     if (cornerInfoModal.classList.contains('hidden')) return;
     const stats = client.getClockStats();
     infoDeviceId.textContent = deviceId;
-    infoServerUrl.textContent = window.GHOST_CONFIG.apiBase;
     infoWsStatus.textContent = client.isConnected() ? '연결됨' : '끊김 (재시도 중)';
     infoClockSync.textContent =
       stats.rttMs !== null ? `RTT ${stats.rttMs}ms / 오차 ${stats.offsetMs}ms` : '측정 중';
@@ -506,6 +551,17 @@
     infoVideoState.textContent = activeVideoMeta
       ? `${activeVideoMeta.videoId} (${loadedVideoId === activeVideoMeta.videoId ? '캐시 완료' : '미준비'})`
       : '없음';
+    infoServerUrl.textContent = window.GHOST_CONFIG.apiBase;
+    infoWsUrl.textContent = window.GHOST_CONFIG.wsUrl;
+  }
+
+  for (const btn of infoTabBtns) {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.infoTab;
+      for (const b of infoTabBtns) b.classList.toggle('active', b === btn);
+      infoPaneStatus.classList.toggle('hidden', target !== 'status');
+      infoPaneServer.classList.toggle('hidden', target !== 'server');
+    });
   }
 
   cornerPinCancel.addEventListener('click', () => {
@@ -527,14 +583,17 @@
         if (data.error === 'pin_locked') {
           cornerPinError.textContent = `잠금 상태입니다 (${data.retryAfterSec}초 후 재시도)`;
         } else if (typeof data.attemptsRemaining === 'number') {
-          cornerPinError.textContent = `PIN이 올바르지 않습니다. (남은 시도 ${data.attemptsRemaining}회)`;
+          cornerPinError.textContent = `스태프 PIN이 올바르지 않습니다. (남은 시도 ${data.attemptsRemaining}회)`;
         } else {
-          cornerPinError.textContent = 'PIN이 올바르지 않습니다.';
+          cornerPinError.textContent = '스태프 PIN이 올바르지 않습니다.';
         }
         return;
       }
       cornerPinInput.value = '';
       cornerPinModal.classList.add('hidden');
+      for (const b of infoTabBtns) b.classList.toggle('active', b.dataset.infoTab === 'status');
+      infoPaneStatus.classList.remove('hidden');
+      infoPaneServer.classList.add('hidden');
       cornerInfoModal.classList.remove('hidden');
       refreshCornerInfoModal();
 
@@ -564,11 +623,16 @@
     setupScreen.classList.remove('hidden');
   });
 
-  saveServerBtn.addEventListener('click', () => {
-    setupError.textContent = '';
-    const ok = window.GHOST_CONFIG.setServerOrigin(serverUrlInput.value);
+  infoServerResetBtn.addEventListener('click', () => {
+    window.GHOST_CONFIG.clearServerOrigin();
+    window.location.reload();
+  });
+
+  infoServerSaveBtn.addEventListener('click', () => {
+    infoServerError.textContent = '';
+    const ok = window.GHOST_CONFIG.setServerOrigin(infoServerInput.value);
     if (!ok) {
-      setupError.textContent = '올바른 https:// (또는 로컬 http://localhost) 서버 주소를 입력하세요.';
+      infoServerError.textContent = '올바른 https:// (또는 로컬 http://) 서버 주소를 입력하세요.';
       return;
     }
     window.location.reload();
@@ -607,7 +671,7 @@
       const pin = displayPin.value.trim();
       if (!pin) {
         pinRow.classList.remove('hidden');
-        setupError.textContent = '최초 등록을 위해 스태프 공용 PIN을 입력해 주세요.';
+        setupError.textContent = '최초 등록을 위해 체험자용 PIN을 입력해 주세요.';
         return;
       }
       try {
@@ -642,7 +706,6 @@
     client.connect();
   });
 
-  // Expose controlled hook for automated / local playback verification
   window.__GHOST_DISPLAY_API__ = {
     deviceId,
     attachPlayableUrl,

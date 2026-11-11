@@ -84,18 +84,26 @@ function createControlSandbox({ fetchImpl } = {}) {
     'timeline-fill', 'timeline-thumb', 'time-text', 'toast',
     'msg-btn', 'msg-sheet-backdrop', 'msg-sheet-close', 'msg-select-step', 'msg-confirm-step',
     'preset-grid', 'custom-msg-form', 'custom-msg-input', 'msg-confirm-preview', 'msg-cancel-btn', 'msg-send-btn',
-    'auth-modal', 'auth-form', 'auth-title', 'auth-desc', 'auth-server-url', 'pin-input',
-    'control-server-override', 'control-server-input', 'control-save-server-btn', 'auth-error', 'auth-cancel-btn',
+    'auth-modal', 'auth-form', 'auth-title', 'auth-desc', 'pin-input',
+    'auth-error', 'auth-cancel-btn', 'auth-corner-gear-btn',
+    'control-server-modal', 'control-server-close', 'preauth-server-current', 'control-server-input',
+    'control-server-error', 'control-reset-server-btn', 'control-save-server-btn',
     'settings-modal', 'settings-close-btn', 'fullscreen-btn', 'admin-logout-btn',
+    'tab-devices', 'tab-videos', 'tab-presets', 'tab-pin', 'tab-server',
     'device-detail-grid', 'required-displays-select', 'offset-A-input', 'offset-B-input',
     'save-device-config-btn', 'resync-btn', 'disk-free-label', 'video-list-container',
     'preset-editor-list', 'add-preset-btn', 'save-presets-btn',
-    'change-pin-form', 'current-pin-input', 'new-pin-input', 'confirm-pin-input', 'change-pin-error'
+    'change-pin-form', 'current-pin-input', 'new-admin-pin-input', 'new-display-pin-input',
+    'confirm-pin-input', 'change-pin-error',
+    'settings-server-api', 'settings-server-ws', 'settings-server-input',
+    'settings-server-error', 'settings-reset-server-btn', 'settings-save-server-btn'
   ];
 
   const hiddenByDefault = new Set([
     'dl-A', 'dl-B', 'conn-pill', 'cooldown-label', 'toast',
-    'msg-sheet-backdrop', 'msg-confirm-step', 'auth-modal', 'auth-cancel-btn', 'settings-modal'
+    'msg-sheet-backdrop', 'msg-confirm-step', 'auth-modal', 'auth-cancel-btn',
+    'control-server-modal', 'settings-modal',
+    'tab-videos', 'tab-presets', 'tab-pin', 'tab-server'
   ]);
 
   for (const id of ids) {
@@ -103,6 +111,14 @@ function createControlSandbox({ fetchImpl } = {}) {
     if (hiddenByDefault.has(id)) el.classList.add('hidden');
     elements.set(id, el);
   }
+
+  const tabBtns = ['devices', 'videos', 'presets', 'pin', 'server'].map((t) => {
+    const btn = createMockElement(`tab-btn-${t}`, 'BUTTON');
+    btn.dataset.tab = t;
+    if (t === 'devices') btn.classList.add('active');
+    return btn;
+  });
+  const tabPanes = ['devices', 'videos', 'presets', 'pin', 'server'].map((t) => elements.get(`tab-${t}`));
 
   const createdSockets = [];
   class MockWebSocket {
@@ -211,7 +227,11 @@ function createControlSandbox({ fetchImpl } = {}) {
       documentElement: { requestFullscreen: async () => {} },
       getElementById: (id) => elements.get(id),
       createElement: (tag) => createMockElement('', tag.toUpperCase()),
-      querySelectorAll: () => [],
+      querySelectorAll: (sel) => {
+        if (sel === '.tab-btn') return tabBtns;
+        if (sel === '.tab-pane') return tabPanes;
+        return [];
+      },
       addEventListener: () => {}
     },
     console
@@ -221,6 +241,7 @@ function createControlSandbox({ fetchImpl } = {}) {
   return {
     context,
     elements,
+    tabBtns,
     local,
     session,
     createdSockets,
@@ -351,8 +372,8 @@ describe('frontend control Phase 3', () => {
     }
   });
 
-  it('supports message sheet confirmation, 2s duplicate guard, and 3s gear hold + admin settings', async () => {
-    const { context, elements, local, session, createdSockets, advancePerf, cleanup } =
+  it('supports pre-auth corner gear server modal, message sheet, and 3s gear hold + 서버 관리 tab', async () => {
+    const { context, elements, tabBtns, local, session, createdSockets, advancePerf, cleanup } =
       createControlSandbox({
         fetchImpl: async (url, opts = {}) => {
           if (url.endsWith('/auth/verify')) {
@@ -398,12 +419,27 @@ describe('frontend control Phase 3', () => {
       });
 
     try {
-      local.set('ghost_control_token', 'ctrl-tok-2');
+      // Unregistered state opens control PIN modal and hides server URL behind corner gear
       vm.runInContext(fs.readFileSync(path.join(FRONTEND_DIR, 'config.js'), 'utf8'), context);
       vm.runInContext(fs.readFileSync(path.join(FRONTEND_DIR, 'shared/ws-client.js'), 'utf8'), context);
       vm.runInContext(fs.readFileSync(path.join(FRONTEND_DIR, 'control.js'), 'utf8'), context);
 
-      await new Promise((r) => setTimeout(r, 20));
+      assert.equal(elements.get('auth-modal').classList.contains('hidden'), false);
+      assert.equal(elements.get('auth-corner-gear-btn').classList.contains('hidden'), false);
+      assert.equal(elements.get('control-server-modal').classList.contains('hidden'), true);
+
+      elements.get('auth-corner-gear-btn').dispatch('click');
+      assert.equal(elements.get('control-server-modal').classList.contains('hidden'), false);
+      assert.equal(elements.get('preauth-server-current').textContent, 'http://localhost:3000');
+      elements.get('control-server-close').dispatch('click');
+      assert.equal(elements.get('control-server-modal').classList.contains('hidden'), true);
+
+      // Register control device with staff PIN
+      elements.get('pin-input').value = 'admincannotgohome31';
+      elements.get('auth-form').dispatch('submit');
+      await new Promise((r) => setTimeout(r, 30));
+      assert.ok(local.get('ghost_control_token'));
+
       const ws = createdSockets[0];
       ws._emitOpen();
       await new Promise((r) => setTimeout(r, 20));
@@ -434,17 +470,25 @@ describe('frontend control Phase 3', () => {
       gearBtn.dispatch('pointerup', { pointerId: 10, clientX: 188, clientY: 188 });
       assert.equal(elements.get('auth-modal').classList.contains('hidden'), true);
 
-      // Gear 3s continuous hold -> opens admin PIN modal -> valid PIN opens settings panel
+      // Gear 3s continuous hold -> opens admin PIN modal (corner gear hidden during admin check)
       gearBtn.dispatch('pointerdown', { pointerId: 11, clientX: 188, clientY: 188 });
       advancePerf(3050);
       await new Promise((r) => setTimeout(r, 30));
       assert.equal(elements.get('auth-modal').classList.contains('hidden'), false);
+      assert.equal(elements.get('auth-corner-gear-btn').classList.contains('hidden'), true);
 
-      elements.get('pin-input').value = '1234';
+      elements.get('pin-input').value = 'admincannotgohome31';
       elements.get('auth-form').dispatch('submit');
       await new Promise((r) => setTimeout(r, 30));
       assert.equal(session.get('ghost_admin_token'), 'adm-tok-1');
       assert.equal(elements.get('settings-modal').classList.contains('hidden'), false);
+
+      // Switching to 서버 관리 tab inside Settings exposes server API & WS URLs
+      const serverTab = tabBtns.find((b) => b.dataset.tab === 'server');
+      serverTab.dispatch('click');
+      assert.equal(elements.get('tab-server').classList.contains('hidden'), false);
+      assert.equal(elements.get('settings-server-api').textContent, 'http://localhost:3000');
+      assert.equal(elements.get('settings-server-ws').textContent, 'ws://localhost:3000/ws');
     } finally {
       cleanup();
     }

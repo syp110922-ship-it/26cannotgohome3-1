@@ -32,7 +32,7 @@
           <circle class="hold-ring-bg" cx="28" cy="28" r="24"></circle>
           <circle class="hold-ring-fg" id="settings-ring" cx="28" cy="28" r="24"></circle>
         </svg>
-        <span class="gear-icon">⚙</span>
+        <img class="gear-img" src="./assets/gear.webp" alt="설정" />
       </button>
     </header>
 
@@ -97,38 +97,62 @@
     </section>
   </div>
 
-  <!-- PIN Auth Modal (shared for initial control bind & settings admin auth) -->
+  <!-- PIN Auth Modal (server URL hidden; accessible only via small corner gear -> 서버 관리) -->
   <div class="modal-backdrop hidden" id="auth-modal">
     <form class="modal-card" id="auth-form">
       <h2 id="auth-title">스태프 인증</h2>
-      <p class="modal-desc" id="auth-desc">조종기기 연결을 위해 공용 PIN을 입력해 주세요.</p>
-      <div class="server-pill" id="auth-server-url"></div>
+      <p class="modal-desc" id="auth-desc">조종기기 연결을 위해 스태프용 PIN을 입력해 주세요.</p>
       <input
         type="password"
-        inputmode="numeric"
         id="pin-input"
-        placeholder="PIN 입력"
+        placeholder="스태프 PIN 입력"
         autocomplete="off"
         required
       />
-      <details class="server-override" id="control-server-override">
-        <summary>서버 주소 수동 설정</summary>
-        <div class="server-override-row">
-          <input
-            type="url"
-            id="control-server-input"
-            placeholder="https://your-subdomain.duckdns.org"
-            autocomplete="off"
-          />
-          <button type="button" class="secondary-btn" id="control-save-server-btn">적용</button>
-        </div>
-      </details>
       <p class="error-text" id="auth-error"></p>
       <div class="modal-actions">
         <button type="button" class="secondary-btn hidden" id="auth-cancel-btn">취소</button>
         <button class="primary-btn" type="submit" id="auth-submit-btn">확인</button>
       </div>
     </form>
+
+    <button
+      type="button"
+      class="corner-gear-btn"
+      id="auth-corner-gear-btn"
+      aria-label="서버 관리"
+      title="서버 관리"
+    >
+      <img src="./assets/gear.webp" alt="" />
+    </button>
+  </div>
+
+  <!-- Pre-auth Server Management Modal (opened only via corner gear) -->
+  <div class="modal-backdrop hidden" id="control-server-modal">
+    <section class="modal-card server-mgmt-card" aria-label="서버 관리">
+      <div class="sheet-header">
+        <span class="server-tab-pill">서버 관리</span>
+        <button type="button" class="close-x" id="control-server-close" aria-label="닫기">✕</button>
+      </div>
+      <div class="form-row">
+        <label>현재 연결 서버</label>
+        <div class="server-pill" id="preauth-server-current"></div>
+      </div>
+      <div class="form-row">
+        <label for="control-server-input">서버 주소 변경</label>
+        <input
+          type="url"
+          id="control-server-input"
+          placeholder="https://your-subdomain.duckdns.org"
+          autocomplete="off"
+        />
+      </div>
+      <p class="error-text" id="control-server-error"></p>
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="control-reset-server-btn">기본값</button>
+        <button type="button" class="primary-btn" id="control-save-server-btn">적용</button>
+      </div>
+    </section>
   </div>
 
   <!-- Settings Modal (3s hold on gear + admin PIN) -->
@@ -148,6 +172,7 @@
         <button type="button" class="tab-btn" data-tab="videos">영상 관리</button>
         <button type="button" class="tab-btn" data-tab="presets">프리셋 편집</button>
         <button type="button" class="tab-btn" data-tab="pin">PIN 변경</button>
+        <button type="button" class="tab-btn" data-tab="server">서버 관리</button>
       </nav>
 
       <div class="settings-body">
@@ -211,25 +236,58 @@
         <!-- Tab 4: PIN Change -->
         <div class="tab-pane hidden" id="tab-pin">
           <form class="settings-card" id="change-pin-form">
-            <h3>스태프 공용 PIN 변경</h3>
+            <h3>PIN 변경</h3>
             <p class="modal-desc">
-              PIN을 변경하면 조종기기는 즉시 갱신되며, 체험자 태블릿(A/B)은 보안을 위해 새 PIN으로 재등록이 필요합니다.
+              변경할 항목만 입력하면 됩니다. 변경 시 기존 기기 토큰은 만료되어 재등록이 필요합니다.
             </p>
             <div class="form-row">
-              <label for="current-pin-input">현재 PIN</label>
-              <input type="password" inputmode="numeric" id="current-pin-input" required autocomplete="off" />
+              <label for="current-pin-input">현재 스태프용 PIN (필수)</label>
+              <input type="password" id="current-pin-input" required autocomplete="off" />
             </div>
             <div class="form-row">
-              <label for="new-pin-input">새 PIN (4~20자)</label>
-              <input type="password" inputmode="numeric" id="new-pin-input" minlength="4" maxlength="20" required autocomplete="off" />
+              <label for="new-admin-pin-input">새 스태프용 PIN (4~64자, 변경 시 입력)</label>
+              <input type="password" id="new-admin-pin-input" maxlength="64" autocomplete="off" />
             </div>
             <div class="form-row">
-              <label for="confirm-pin-input">새 PIN 확인</label>
-              <input type="password" inputmode="numeric" id="confirm-pin-input" minlength="4" maxlength="20" required autocomplete="off" />
+              <label for="new-display-pin-input">새 체험자용 PIN (4~64자, 변경 시 입력)</label>
+              <input type="password" id="new-display-pin-input" maxlength="64" autocomplete="off" />
+            </div>
+            <div class="form-row">
+              <label for="confirm-pin-input">새 스태프용 PIN 확인 (스태프 PIN 변경 시)</label>
+              <input type="password" id="confirm-pin-input" maxlength="64" autocomplete="off" />
             </div>
             <p class="error-text" id="change-pin-error"></p>
-            <button type="submit" class="primary-btn">PIN 변경</button>
+            <button type="submit" class="primary-btn">PIN 변경 적용</button>
           </form>
+        </div>
+
+        <!-- Tab 5: Server Management (ONLY place where server URL is shown inside settings) -->
+        <div class="tab-pane hidden" id="tab-server">
+          <div class="settings-card">
+            <h3>서버 관리</h3>
+            <div class="form-row">
+              <label>현재 API 서버</label>
+              <div class="server-pill" id="settings-server-api"></div>
+            </div>
+            <div class="form-row">
+              <label>현재 WebSocket 서버</label>
+              <div class="server-pill" id="settings-server-ws"></div>
+            </div>
+            <div class="form-row">
+              <label for="settings-server-input">서버 주소 변경</label>
+              <input
+                type="url"
+                id="settings-server-input"
+                placeholder="https://your-subdomain.duckdns.org"
+                autocomplete="off"
+              />
+            </div>
+            <p class="error-text" id="settings-server-error"></p>
+            <div class="settings-actions">
+              <button type="button" class="secondary-btn" id="settings-reset-server-btn">기본값 복원</button>
+              <button type="button" class="primary-btn" id="settings-save-server-btn">주소 적용</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>

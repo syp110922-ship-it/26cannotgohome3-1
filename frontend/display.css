@@ -119,6 +119,119 @@ body {
   font-size: 22px;
 }
 
+.device-switch-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.device-switch-link {
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #0b0d12;
+  color: rgba(255, 255, 255, 0.72);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.device-switch-link.active {
+  background: #e11d48;
+  border-color: transparent;
+  color: #ffffff;
+}
+
+.corner-gear-btn {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: 34px;
+  height: 34px;
+  padding: 6px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(16, 18, 24, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.52;
+  cursor: pointer;
+}
+
+.corner-gear-btn:hover,
+.corner-gear-btn:active {
+  opacity: 0.95;
+}
+
+.corner-gear-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.modal-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.server-tab-pill {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #232837;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.close-x {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #1f2430;
+  color: #f3f4f6;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.form-row label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.info-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.info-tab-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #0b0c10;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.info-tab-btn.active {
+  background: #232837;
+  color: #ffffff;
+}
+
 .setup-desc {
   margin: 0;
   font-size: 14px;
@@ -151,9 +264,14 @@ body {
 }
 
 .pin-row input,
-.modal-card input {
+.modal-card input[type="password"] {
   text-align: center;
   font-size: 18px;
+}
+
+.modal-card input[type="url"] {
+  text-align: left;
+  font-size: 14px;
 }
 
 .server-override {
@@ -276,7 +394,11 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 10px;
+}
+
+.info-btn-grid .danger-btn {
+  grid-column: span 2;
 }
 
 .primary-btn,

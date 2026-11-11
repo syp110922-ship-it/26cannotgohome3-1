@@ -80,7 +80,18 @@ function loadConfig(overrides = {}) {
     allowedOrigins:
       overrides.allowedOrigins || parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
     authSecret: overrides.authSecret ?? process.env.AUTH_SECRET ?? '',
-    initialPin: String(overrides.initialPin ?? process.env.INITIAL_PIN ?? '1234'),
+    initialAdminPin: String(
+      overrides.initialAdminPin ??
+        overrides.initialPin ??
+        process.env.INITIAL_ADMIN_PIN ??
+        process.env.INITIAL_PIN ??
+        'admincannotgohome31'
+    ),
+    initialDisplayPin: String(
+      overrides.initialDisplayPin ??
+        process.env.INITIAL_DISPLAY_PIN ??
+        'cannotgohome31'
+    ),
     pinMaxAttempts: Number(overrides.pinMaxAttempts ?? process.env.PIN_MAX_ATTEMPTS ?? 5),
     pinLockoutMs: Number(overrides.pinLockoutMs ?? process.env.PIN_LOCKOUT_MS ?? 60000),
     authIpRateLimitMax: Number(
