@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0a0d" />
+  <title>귀신의집 조종기</title>
+  <link rel="stylesheet" href="./control.css" />
+</head>
+<body>
+  <div class="bg-stage" aria-hidden="true"></div>
+  <div class="bg-overlay" aria-hidden="true"></div>
+
+  <main class="control-shell">
+    <header class="top-bar">
+      <div class="device-dots">
+        <div class="dot-pill" id="dot-wrap-A">
+          <span class="dot red" id="dot-A"></span>
+          <span class="dot-label">A</span>
+        </div>
+        <div class="dot-pill" id="dot-wrap-B">
+          <span class="dot red" id="dot-B"></span>
+          <span class="dot-label">B</span>
+        </div>
+        <span class="state-badge" id="state-badge">NOT_READY</span>
+      </div>
+
+      <button class="icon-btn" id="settings-btn" type="button" aria-label="설정">
+        ⚙
+      </button>
+    </header>
+
+    <section class="center-stage">
+      <button class="play-btn disabled" id="play-btn" type="button" disabled aria-label="재생 또는 정지">
+        <span class="play-icon" id="play-icon">▶</span>
+      </button>
+      <p class="skeleton-hint" id="status-hint">Phase 1 서버 뼈대 연결 대기 중</p>
+    </section>
+
+    <footer class="bottom-bar">
+      <div class="timeline-row">
+        <div class="timeline-track" aria-readonly="true">
+          <div class="timeline-fill" id="timeline-fill"></div>
+          <div class="timeline-thumb" id="timeline-thumb"></div>
+        </div>
+        <div class="time-text" id="time-text">0:00 / 0:00</div>
+      </div>
+
+      <div class="action-row">
+        <button class="msg-btn" id="msg-btn" type="button">💬 메시지</button>
+      </div>
+    </footer>
+  </main>
+
+  <div class="modal-backdrop hidden" id="auth-modal">
+    <form class="modal-card" id="auth-form">
+      <h2>스태프 인증</h2>
+      <p class="modal-desc" id="auth-desc">조종기기 연결을 위해 공용 PIN을 입력해 주세요.</p>
+      <input
+        type="password"
+        inputmode="numeric"
+        id="pin-input"
+        placeholder="PIN 입력"
+        autocomplete="off"
+        required
+      />
+      <p class="error-text" id="auth-error"></p>
+      <button class="primary-btn" type="submit">연결하기</button>
+    </form>
+  </div>
+
+  <script src="./config.js"></script>
+  <script src="./shared/ws-client.js"></script>
+  <script src="./control.js"></script>
+</body>
+</html>

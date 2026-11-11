@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#000000" />
+  <title>Display</title>
+  <link rel="stylesheet" href="./display.css" />
+</head>
+<body>
+  <main class="black-stage" id="black-stage">
+    <video
+      id="player"
+      class="video-player hidden"
+      playsinline
+      disablepictureinpicture
+      controlslist="nodownload"
+    ></video>
+
+    <div class="msg-overlay hidden" id="msg-overlay"></div>
+  </main>
+
+  <section class="setup-screen" id="setup-screen">
+    <div class="setup-card">
+      <h1 id="device-title">체험자 화면</h1>
+      <p class="setup-desc" id="setup-desc">
+        스태프 초기 설정 화면입니다. 시작을 누르면 전체화면·오디오 잠금 해제·화면 켜짐 유지 후 검은 대기 화면으로 전환됩니다.
+      </p>
+
+      <div class="pin-row hidden" id="pin-row">
+        <input
+          type="password"
+          inputmode="numeric"
+          id="display-pin"
+          placeholder="스태프 PIN (최초 1회)"
+          autocomplete="off"
+        />
+      </div>
+
+      <p class="setup-error" id="setup-error"></p>
+      <button class="start-btn" id="start-btn" type="button">시작</button>
+    </div>
+  </section>
+
+  <script src="./config.js"></script>
+  <script src="./shared/ws-client.js"></script>
+  <script src="./display.js"></script>
+</body>
+</html>
