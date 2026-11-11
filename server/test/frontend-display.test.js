@@ -161,6 +161,7 @@ function createDomSandbox({ search = '?id=A', origin = 'https://booth.netlify.ap
   const context = vm.createContext({
     location: {
       origin,
+      protocol: new URL(origin).protocol,
       hostname: new URL(origin).hostname,
       search,
       reload: () => {}
@@ -173,6 +174,10 @@ function createDomSandbox({ search = '?id=A', origin = 'https://booth.netlify.ap
     addEventListener: (t, fn) => {
       if (!winListeners.has(t)) winListeners.set(t, []);
       winListeners.get(t).push(fn);
+    },
+    removeEventListener: (t, fn) => {
+      const list = winListeners.get(t) || [];
+      winListeners.set(t, list.filter((f) => f !== fn));
     },
     URL,
     URLSearchParams,
@@ -250,11 +255,28 @@ describe('frontend config, ws-client, and display Phase 2', () => {
       assert.equal(context.GHOST_CONFIG.apiBase, 'https://booth.netlify.app');
       assert.equal(storage.has('ghost_server_origin'), false);
       assert.equal(context.GHOST_CONFIG.validateOrigin('http://evil.example.com'), null);
+      assert.equal(context.GHOST_CONFIG.validateOrigin('http://192.168.0.10:3000'), null);
       assert.equal(
         context.GHOST_CONFIG.validateOrigin('https://ghost.duckdns.org/path'),
         'https://ghost.duckdns.org'
       );
       assert.equal(context.GHOST_CONFIG.validateOrigin('http://localhost:3000'), 'http://localhost:3000');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('allows private LAN http origin only when page itself is http', () => {
+    const { context, cleanup } = createDomSandbox({
+      origin: 'http://192.168.0.10:3000'
+    });
+    try {
+      vm.runInContext(fs.readFileSync(path.join(FRONTEND_DIR, 'config.js'), 'utf8'), context);
+      assert.equal(
+        context.GHOST_CONFIG.validateOrigin('http://192.168.0.25:3000'),
+        'http://192.168.0.25:3000'
+      );
+      assert.equal(context.GHOST_CONFIG.validateOrigin('http://8.8.8.8:3000'), null);
     } finally {
       cleanup();
     }

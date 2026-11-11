@@ -213,10 +213,24 @@
       });
     }
 
+    const onBrowserOnline = () => {
+      if (closedByUser || connected) return;
+      if (ws && ws.readyState === WebSocket.CONNECTING) return;
+      reconnectAttempt = 0;
+      clearTimers();
+      connect();
+    };
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('online', onBrowserOnline);
+    }
+
     function disconnect() {
       closedByUser = true;
       connected = false;
       clearTimers();
+      if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+        window.removeEventListener('online', onBrowserOnline);
+      }
       if (ws) {
         const old = ws;
         ws = null;

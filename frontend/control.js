@@ -583,10 +583,13 @@
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        authError.textContent =
-          data.error === 'pin_locked'
-            ? `잠금 상태입니다 (${data.retryAfterSec}초 후 재시도)`
-            : 'PIN이 올바르지 않습니다.';
+        if (data.error === 'pin_locked') {
+          authError.textContent = `잠금 상태입니다 (${data.retryAfterSec}초 후 재시도)`;
+        } else if (typeof data.attemptsRemaining === 'number') {
+          authError.textContent = `PIN이 올바르지 않습니다. (남은 시도 ${data.attemptsRemaining}회)`;
+        } else {
+          authError.textContent = 'PIN이 올바르지 않습니다.';
+        }
         return;
       }
 
@@ -935,10 +938,13 @@
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        changePinError.textContent =
-          data.error === 'pin_locked'
-            ? `잠금 상태입니다 (${data.retryAfterSec}초 후 재시도)`
-            : '현재 PIN 또는 새 PIN 형식을 확인해 주세요.';
+        if (data.error === 'pin_locked') {
+          changePinError.textContent = `잠금 상태입니다 (${data.retryAfterSec}초 후 재시도)`;
+        } else if (typeof data.attemptsRemaining === 'number') {
+          changePinError.textContent = `현재 PIN이 올바르지 않습니다. (남은 시도 ${data.attemptsRemaining}회)`;
+        } else {
+          changePinError.textContent = '현재 PIN 또는 새 PIN 형식을 확인해 주세요.';
+        }
         return;
       }
 

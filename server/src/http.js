@@ -183,7 +183,12 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
   }
 
   function serveStaticFile(req, res, pathname) {
-    let relPath = pathname === '/' ? '/control.html' : pathname;
+    let relPath = pathname;
+    if (pathname === '/' || pathname === '/control') {
+      relPath = '/control.html';
+    } else if (pathname === '/display') {
+      relPath = '/display.html';
+    }
     try {
       relPath = decodeURIComponent(relPath);
     } catch {

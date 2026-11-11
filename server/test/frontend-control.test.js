@@ -166,6 +166,7 @@ function createControlSandbox({ fetchImpl } = {}) {
   const context = vm.createContext({
     location: {
       origin: 'http://localhost:3000',
+      protocol: 'http:',
       hostname: 'localhost',
       search: '',
       reload: () => {}
@@ -181,6 +182,7 @@ function createControlSandbox({ fetchImpl } = {}) {
       removeItem: (k) => session.delete(k)
     },
     addEventListener: () => {},
+    removeEventListener: () => {},
     URL,
     URLSearchParams,
     WebSocket: MockWebSocket,

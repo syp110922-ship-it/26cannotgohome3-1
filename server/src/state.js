@@ -208,12 +208,8 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
 
   function touchHeartbeat(id, metrics = {}) {
     const d = displays[id];
-    if (!d) return;
+    if (!d || !d.connected) return;
     d.lastSeen = Date.now();
-    if (!d.connected) {
-      d.connected = true;
-      recomputeState();
-    }
     if (typeof metrics.rttMs === 'number' && Number.isFinite(metrics.rttMs)) {
       d.rttMs = Math.round(metrics.rttMs);
     }
@@ -256,7 +252,15 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
       d.pos = pos;
       if (state === STATES.PLAYING && playback) {
         if (!payload.videoId || payload.videoId === playback.videoId) {
-          playback.pos = pos;
+          const activePositions = [...playback.startedDisplays]
+            .filter((dispId) => displays[dispId]?.connected && displays[dispId].pos > 0)
+            .map((dispId) => displays[dispId].pos);
+          if (activePositions.length > 0) {
+            const avg = activePositions.reduce((sum, v) => sum + v, 0) / activePositions.length;
+            playback.pos = Number(avg.toFixed(2));
+          } else {
+            playback.pos = pos;
+          }
           emitStatus();
         }
       }
@@ -444,8 +448,8 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
   }
 
   function triggerResync() {
-    if (state === STATES.PLAYING) {
-      return { ok: false, reason: 'cannot_resync_while_playing' };
+    if (state === STATES.PLAYING || state === STATES.COOLDOWN) {
+      return { ok: false, reason: 'cannot_resync_while_playing', state };
     }
     if (!activeVideo) {
       return { ok: false, reason: 'no_active_video' };

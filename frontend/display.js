@@ -524,10 +524,13 @@
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        cornerPinError.textContent =
-          data.error === 'pin_locked'
-            ? `잠금 상태입니다 (${data.retryAfterSec}초 후 재시도)`
-            : 'PIN이 올바르지 않습니다.';
+        if (data.error === 'pin_locked') {
+          cornerPinError.textContent = `잠금 상태입니다 (${data.retryAfterSec}초 후 재시도)`;
+        } else if (typeof data.attemptsRemaining === 'number') {
+          cornerPinError.textContent = `PIN이 올바르지 않습니다. (남은 시도 ${data.attemptsRemaining}회)`;
+        } else {
+          cornerPinError.textContent = 'PIN이 올바르지 않습니다.';
+        }
         return;
       }
       cornerPinInput.value = '';
@@ -615,10 +618,13 @@
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
-          setupError.textContent =
-            data.error === 'pin_locked'
-              ? `잠금 상태입니다 (${data.retryAfterSec}초 후 재시도)`
-              : 'PIN이 올바르지 않습니다.';
+          if (data.error === 'pin_locked') {
+            setupError.textContent = `잠금 상태입니다 (${data.retryAfterSec}초 후 재시도)`;
+          } else if (typeof data.attemptsRemaining === 'number') {
+            setupError.textContent = `PIN이 올바르지 않습니다. (남은 시도 ${data.attemptsRemaining}회)`;
+          } else {
+            setupError.textContent = 'PIN이 올바르지 않습니다.';
+          }
           return;
         }
         token = data.token;

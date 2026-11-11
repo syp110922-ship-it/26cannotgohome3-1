@@ -4,15 +4,30 @@
   const PROD_BACKEND_ORIGIN = '';
   const STORAGE_KEY = 'ghost_server_origin';
 
+  function isPrivateLanIpv4(hostname) {
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    const m = /^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(hostname);
+    if (m) {
+      const second = Number(m[1]);
+      return second >= 16 && second <= 31;
+    }
+    return false;
+  }
+
   function validateOrigin(raw) {
     if (typeof raw !== 'string' || !raw.trim()) return null;
     try {
       const parsed = new URL(raw.trim());
       const isHttps = parsed.protocol === 'https:';
-      const isLocalHttp =
+      const isLoopbackHttp =
         parsed.protocol === 'http:' &&
         (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1');
-      if (!isHttps && !isLocalHttp) {
+      const isLanHttpAllowed =
+        parsed.protocol === 'http:' &&
+        window.location.protocol === 'http:' &&
+        (parsed.origin === window.location.origin || isPrivateLanIpv4(parsed.hostname));
+      if (!isHttps && !isLoopbackHttp && !isLanHttpAllowed) {
         return null;
       }
       return parsed.origin;
