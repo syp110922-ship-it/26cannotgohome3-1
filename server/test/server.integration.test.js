@@ -715,6 +715,22 @@ describe('HTTP & WebSocket server integration', () => {
     const restoredPush = await wsA.nextMessage((m) => m.t === 'video' && m.videoId === restoreId);
     assert.equal(restoredPush.videoId, restoreId);
 
+    // Supports X-Ghost-Token header + ?token= fallback when Authorization header is omitted/stripped
+    const fallbackBuf = buildTestMp4Buffer({ durationSec: 9, mdatBytes: 1024 });
+    const formGhost = new FormData();
+    formGhost.append('video', new Blob([fallbackBuf], { type: 'video/mp4' }), 'ghost-header.mp4');
+    const ghostUp = await fetch(`${baseUrl}/upload`, {
+      method: 'POST',
+      headers: { 'X-Ghost-Token': adminAuth.token },
+      body: formGhost
+    });
+    assert.equal(ghostUp.status, 200);
+
+    // Serves Pretendard-Regular.woff2 with proper font/woff2 MIME type
+    const fontRes = await fetch(`${baseUrl}/assets/fonts/Pretendard-Regular.woff2`);
+    assert.equal(fontRes.status, 200);
+    assert.equal(fontRes.headers.get('content-type'), 'font/woff2');
+
     wsA.close();
   });
 });

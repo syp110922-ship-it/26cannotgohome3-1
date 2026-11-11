@@ -71,13 +71,15 @@ const MIME_TYPES = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2'
 };
 
 const HTML_CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self'",
+  "font-src 'self'",
   "img-src 'self' data: blob:",
   "media-src 'self' blob: data:",
   "connect-src 'self' ws: wss: https: http:",
@@ -186,7 +188,10 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
       res.setHeader('Vary', 'Origin');
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, HEAD');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Range');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Authorization, X-Ghost-Token, X-Admin-Token, Content-Type, Range'
+    );
     res.setHeader(
       'Access-Control-Expose-Headers',
       'Content-Length, Content-Range, Accept-Ranges, ETag'
@@ -215,8 +220,13 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
 
   function extractToken(req, url) {
     const authHeader = req.headers.authorization;
-    if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-      return authHeader.slice(7).trim();
+    if (typeof authHeader === 'string') {
+      const m = /^Bearer\s+(.+)$/i.exec(authHeader.trim());
+      if (m && m[1]) return m[1].trim();
+    }
+    const ghostToken = req.headers['x-ghost-token'] || req.headers['x-admin-token'];
+    if (typeof ghostToken === 'string' && ghostToken.trim()) {
+      return ghostToken.trim();
     }
     return url.searchParams.get('token') || '';
   }

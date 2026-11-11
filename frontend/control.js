@@ -74,6 +74,9 @@
 
   const diskFreeLabel = document.getElementById('disk-free-label');
   const videoUploadInput = document.getElementById('video-upload-input');
+  const videoUploadDropzone = document.getElementById('video-upload-dropzone');
+  const videoUploadTitle = document.getElementById('video-upload-title');
+  const videoUploadFileMeta = document.getElementById('video-upload-file-meta');
   const videoUploadBtn = document.getElementById('video-upload-btn');
   const videoUploadCancelBtn = document.getElementById('video-upload-cancel-btn');
   const videoUploadProgressWrap = document.getElementById('video-upload-progress-wrap');
@@ -122,6 +125,7 @@
   let isSavingSettings = false;
   let pendingControlReauth = false;
   let activeUploadXhr = null;
+  let droppedUploadFile = null;
   let wakeLock = null;
   let toastTimer = null;
   let settingsPollTimer = null;
@@ -754,7 +758,10 @@
 
   function getAdminHeaders(json = false) {
     const token = getAdminToken();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      'X-Ghost-Token': token
+    };
     if (json) headers['Content-Type'] = 'application/json';
     return headers;
   }
@@ -1162,9 +1169,51 @@
     }
   });
 
+  function updateSelectedUploadFile(file) {
+    if (!file) {
+      droppedUploadFile = null;
+      videoUploadDropzone.classList.remove('has-file');
+      videoUploadTitle.textContent = '여기를 눌러 MP4 영상 파일을 선택하거나 끌어다 놓으세요';
+      videoUploadFileMeta.textContent = '선택된 파일 없음 · 용량 제한 없음 (H.264 / AAC MP4)';
+      return;
+    }
+    videoUploadError.textContent = '';
+    videoUploadDropzone.classList.add('has-file');
+    videoUploadTitle.textContent = file.name || '선택된 영상.mp4';
+    videoUploadFileMeta.textContent = `${formatBytes(file.size)} · 업로드 준비 완료`;
+  }
+
+  videoUploadInput.addEventListener('change', () => {
+    droppedUploadFile = null;
+    updateSelectedUploadFile(videoUploadInput.files?.[0] || null);
+  });
+
+  videoUploadDropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (!videoUploadInput.disabled) {
+      videoUploadDropzone.classList.add('dragover');
+    }
+  });
+
+  videoUploadDropzone.addEventListener('dragleave', () => {
+    videoUploadDropzone.classList.remove('dragover');
+  });
+
+  videoUploadDropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    videoUploadDropzone.classList.remove('dragover');
+    if (videoUploadInput.disabled) return;
+    const file = e.dataTransfer?.files?.[0] || null;
+    if (file) {
+      droppedUploadFile = file;
+      updateSelectedUploadFile(file);
+    }
+  });
+
   function setUploadUiState(isUploading, pct = 0, label = '') {
     videoUploadBtn.disabled = isUploading;
     videoUploadInput.disabled = isUploading;
+    videoUploadDropzone.style.pointerEvents = isUploading ? 'none' : '';
     videoUploadCancelBtn.classList.toggle('hidden', !isUploading);
     videoUploadProgressWrap.classList.toggle('hidden', !isUploading && pct === 0);
     videoUploadProgressFill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
@@ -1182,14 +1231,14 @@
 
   videoUploadBtn.addEventListener('click', () => {
     videoUploadError.textContent = '';
-    const file = videoUploadInput.files?.[0];
+    const file = droppedUploadFile || videoUploadInput.files?.[0];
     if (!file) {
       videoUploadError.textContent = '업로드할 MP4 파일을 먼저 선택해 주세요.';
       return;
     }
     const token = getAdminToken();
     if (!token) {
-      videoUploadError.textContent = '설정 인증이 만료되었습니다.';
+      videoUploadError.textContent = '설정 인증이 만료되었습니다. 설정을 닫고 다시 로그인해 주세요.';
       return;
     }
 
@@ -1221,6 +1270,7 @@
       }
       if (xhr.status >= 200 && xhr.status < 300 && data.ok) {
         videoUploadInput.value = '';
+        updateSelectedUploadFile(null);
         diskFreeLabel.textContent = `디스크 여유: ${formatBytes(data.diskFreeBytes)}`;
         renderVideoList(data.videos || []);
         showToast('영상 업로드 및 적용 완료! A/B 기기로 자동 배포됩니다.');
@@ -1228,6 +1278,10 @@
       }
 
       const errMap = {
+        missing_token: '설정 인증 토큰이 전달되지 않았습니다. 설정을 닫았다가 다시 열어 주세요.',
+        token_expired: '설정 인증 시간이 만료되었습니다. 설정을 다시 열어 주세요.',
+        invalid_signature: '서버가 재시작되어 인증이 초기화되었습니다. 설정을 다시 열어 주세요.',
+        forbidden_scope: '관리자 설정 권한이 필요합니다.',
         invalid_mp4_header: '유효한 MP4(H.264/AAC) 파일이 아닙니다.',
         missing_moov_box: 'MP4 메타데이터(moov)가 손상되었거나 없습니다.',
         missing_media_track: '영상/오디오 트랙을 찾을 수 없습니다.',
@@ -1249,8 +1303,9 @@
       setUploadUiState(false, 0, '');
     };
 
-    xhr.open('POST', `${window.GHOST_CONFIG.apiBase}/upload`);
+    xhr.open('POST', `${window.GHOST_CONFIG.apiBase}/upload?token=${encodeURIComponent(token)}`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('X-Ghost-Token', token);
     xhr.send(formData);
   });
 

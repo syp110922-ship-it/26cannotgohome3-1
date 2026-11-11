@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'Pretendard';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/Pretendard-Regular.woff2') format('woff2');
+}
+
 * {
   box-sizing: border-box;
   -webkit-user-select: none;
@@ -15,8 +23,25 @@ body {
   overflow: hidden;
   background: #000000;
   color: #f9fafb;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  font-weight: 400;
+  font-synthesis: none;
+  line-height: 1.45;
+  word-break: keep-all;
   touch-action: none;
+}
+
+button,
+input,
+select,
+textarea,
+h1,
+h2,
+h3,
+strong {
+  font-family: inherit;
+  font-weight: 400;
+  font-synthesis: none;
 }
 
 .black-stage {

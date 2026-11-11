@@ -216,7 +216,14 @@
               <span class="muted-meta" id="disk-free-label">남은 용량 확인 중</span>
             </div>
             <div class="upload-row">
-              <input type="file" id="video-upload-input" accept="video/mp4,.mp4" />
+              <input type="file" id="video-upload-input" class="sr-only-file-input" accept="video/mp4,.mp4" />
+              <label for="video-upload-input" class="upload-dropzone" id="video-upload-dropzone">
+                <img src="./assets/upload.webp" alt="" class="upload-dropzone-icon" />
+                <div class="upload-dropzone-text">
+                  <span class="upload-dropzone-title" id="video-upload-title">여기를 눌러 MP4 영상 파일을 선택하거나 끌어다 놓으세요</span>
+                  <span class="upload-dropzone-meta" id="video-upload-file-meta">선택된 파일 없음 · 용량 제한 없음 (H.264 / AAC MP4)</span>
+                </div>
+              </label>
               <div class="settings-actions">
                 <button type="button" class="primary-btn" id="video-upload-btn">업로드 및 적용</button>
                 <button type="button" class="danger-btn hidden" id="video-upload-cancel-btn">업로드 취소</button>

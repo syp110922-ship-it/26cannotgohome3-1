@@ -103,7 +103,8 @@ function createControlSandbox({ fetchImpl } = {}) {
     'tab-devices', 'tab-videos', 'tab-presets', 'tab-pin', 'tab-server',
     'device-detail-grid', 'required-displays-select', 'offset-A-input', 'offset-B-input',
     'save-device-config-btn', 'resync-btn', 'disk-free-label',
-    'video-upload-input', 'video-upload-btn', 'video-upload-cancel-btn',
+    'video-upload-input', 'video-upload-dropzone', 'video-upload-title', 'video-upload-file-meta',
+    'video-upload-btn', 'video-upload-cancel-btn',
     'video-upload-progress-wrap', 'video-upload-progress-fill', 'video-upload-progress-text', 'video-upload-error',
     'booth-test-play-btn', 'booth-test-stop-btn', 'video-list-container',
     'video-preview-card', 'video-preview-title', 'video-preview-close', 'video-preview-player',
@@ -560,13 +561,18 @@ describe('frontend control Phase 3', () => {
       assert.equal(elements.get('settings-modal').classList.contains('hidden'), true);
       assert.equal(session.get('ghost_admin_token'), undefined);
 
-      // Phase 4 control markup has real upload & preview controls and no placeholder notice
+      // Phase 4 control markup has real upload & preview controls, white upload icon, Pretendard font, and no placeholder notice
       const ctrlHtml = fs.readFileSync(path.join(FRONTEND_DIR, 'control.html'), 'utf8');
+      const ctrlCss = fs.readFileSync(path.join(FRONTEND_DIR, 'control.css'), 'utf8');
       assert.ok(ctrlHtml.includes('id="video-upload-input"'));
+      assert.ok(ctrlHtml.includes('id="video-upload-dropzone"'));
+      assert.ok(ctrlHtml.includes('./assets/upload.webp'));
       assert.ok(ctrlHtml.includes('id="video-upload-btn"'));
       assert.ok(ctrlHtml.includes('id="booth-test-play-btn"'));
       assert.ok(ctrlHtml.includes('id="video-preview-player"'));
       assert.ok(!ctrlHtml.includes('4단계에서 활성화됩니다'));
+      assert.ok(ctrlCss.includes("Pretendard-Regular.woff2"));
+      assert.ok(ctrlCss.includes('font-weight: 400'));
     } finally {
       cleanup();
     }

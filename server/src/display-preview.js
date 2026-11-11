@@ -13,13 +13,15 @@ const MIME_TYPES = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2'
 };
 
 const HTML_CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self'",
+  "font-src 'self'",
   "img-src 'self' data: blob:",
   "media-src 'self' blob: data:",
   "connect-src 'self' ws: wss: https: http:",

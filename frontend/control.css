@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'Pretendard';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/Pretendard-Regular.woff2') format('woff2');
+}
+
 :root {
   --bg-dark: #07080b;
   --overlay: rgba(0, 0, 0, 0.42);
@@ -28,8 +36,25 @@ body {
   overflow: hidden;
   background: var(--bg-dark);
   color: var(--text-main);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  font-weight: 400;
+  font-synthesis: none;
+  line-height: 1.45;
+  word-break: keep-all;
   touch-action: manipulation;
+}
+
+button,
+input,
+select,
+textarea,
+h1,
+h2,
+h3,
+strong {
+  font-family: inherit;
+  font-weight: 400;
+  font-synthesis: none;
 }
 
 .hidden {
@@ -222,10 +247,10 @@ body {
 
 .play-btn {
   position: relative;
-  width: clamp(270px, 52vw, 400px);
-  height: clamp(220px, 44vh, 290px);
-  padding: 20px;
-  border-radius: 38px;
+  width: clamp(320px, 68vw, 560px);
+  height: clamp(260px, 52vh, 380px);
+  padding: 24px;
+  border-radius: 44px;
   border: none;
   background: rgba(14, 17, 25, 0.82);
   backdrop-filter: blur(6px);
@@ -233,7 +258,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 16px;
   cursor: pointer;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.68);
   transition: transform 0.12s ease, opacity 0.2s ease, box-shadow 0.2s ease;
@@ -261,8 +286,8 @@ body {
 .play-icon-img {
   position: relative;
   z-index: 1;
-  width: clamp(132px, 24vh, 172px);
-  height: clamp(132px, 24vh, 172px);
+  width: clamp(160px, 32vh, 236px);
+  height: clamp(160px, 32vh, 236px);
   border-radius: 50%;
   object-fit: contain;
   pointer-events: none;
@@ -272,8 +297,8 @@ body {
 .play-action-hint {
   position: relative;
   z-index: 1;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: clamp(17px, 2.3vh, 21px);
+  font-weight: 400;
   color: var(--text-main);
   letter-spacing: 0.01em;
   pointer-events: none;
@@ -882,7 +907,69 @@ body {
 .upload-row {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+}
+
+.sr-only-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.upload-dropzone {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 16px;
+  border-radius: 14px;
+  border: 1.5px dashed rgba(255, 255, 255, 0.28);
+  background: rgba(11, 12, 16, 0.9);
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.12s ease;
+}
+
+.upload-dropzone:hover,
+.upload-dropzone.dragover {
+  border-color: rgba(255, 255, 255, 0.65);
+  background: rgba(31, 36, 48, 0.85);
+}
+
+.upload-dropzone.has-file {
+  border-style: solid;
+  border-color: rgba(34, 197, 94, 0.65);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.upload-dropzone-icon {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.upload-dropzone-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.upload-dropzone-title {
+  font-size: 15px;
+  color: var(--text-main);
+  word-break: break-all;
+}
+
+.upload-dropzone-meta {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .upload-progress-wrap {
