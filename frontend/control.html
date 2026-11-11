@@ -38,11 +38,12 @@
 
     <section class="center-stage">
       <button class="play-btn disabled" id="play-btn" type="button" disabled aria-label="길게 눌러 재생 또는 정지">
-        <svg class="play-ring" viewBox="0 0 180 180" aria-hidden="true">
-          <circle class="play-ring-bg" cx="90" cy="90" r="82"></circle>
-          <circle class="play-ring-fg" id="play-ring" cx="90" cy="90" r="82"></circle>
+        <svg class="play-ring" viewBox="0 0 360 260" preserveAspectRatio="none" aria-hidden="true">
+          <rect class="play-ring-bg" x="5" y="5" width="350" height="250" rx="34" pathLength="100"></rect>
+          <rect class="play-ring-fg" id="play-ring" x="5" y="5" width="350" height="250" rx="34" pathLength="100"></rect>
         </svg>
         <img class="play-icon-img" id="play-icon" src="./assets/play-ready.webp" alt="재생" />
+        <span class="play-action-hint" id="play-hint">기기 연결 대기 중</span>
       </button>
       <div class="cooldown-label hidden" id="cooldown-label"></div>
     </section>

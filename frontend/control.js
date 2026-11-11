@@ -5,7 +5,7 @@
   const PLAY_HOLD_MS = 600;
   const STOP_HOLD_MS = 1000;
   const SETTINGS_HOLD_MS = 3000;
-  const PLAY_RING_CIRCUMFERENCE = 2 * Math.PI * 82;
+  const PLAY_RING_LENGTH = 100;
   const SETTINGS_RING_CIRCUMFERENCE = 2 * Math.PI * 24;
 
   const dotWrapA = document.getElementById('dot-wrap-A');
@@ -22,6 +22,7 @@
   const playBtn = document.getElementById('play-btn');
   const playRing = document.getElementById('play-ring');
   const playIcon = document.getElementById('play-icon');
+  const playHint = document.getElementById('play-hint');
   const cooldownLabel = document.getElementById('cooldown-label');
 
   const timelineFill = document.getElementById('timeline-fill');
@@ -274,16 +275,22 @@
       playBtn.disabled = false;
       playIcon.src = './assets/play-ready.webp';
       playIcon.alt = '재생 (길게 누름)';
+      if (playHint) playHint.textContent = '0.6초 길게 눌러 시작';
     } else if (snapshot.state === 'PLAYING' && client.isConnected()) {
       playBtn.classList.add('playing');
       playBtn.disabled = false;
       playIcon.src = './assets/play-playing.webp';
       playIcon.alt = '재생 중 (길게 눌러 정지)';
+      if (playHint) playHint.textContent = '재생 중 · 1초 길게 눌러 정지';
     } else {
       playBtn.classList.add('disabled');
       playBtn.disabled = true;
       playIcon.src = './assets/play-ready.webp';
       playIcon.alt = '대기 중';
+      if (playHint) {
+        playHint.textContent =
+          snapshot.state === 'COOLDOWN' ? '재시작 대기 중' : '기기 준비 대기 중';
+      }
     }
 
     resyncBtn.disabled = snapshot.state === 'PLAYING';
@@ -298,7 +305,7 @@
 
   function setPlayRingProgress(progress) {
     const clamped = Math.max(0, Math.min(1, progress));
-    playRing.style.strokeDashoffset = String(PLAY_RING_CIRCUMFERENCE * (1 - clamped));
+    playRing.style.strokeDashoffset = String(PLAY_RING_LENGTH * (1 - clamped));
   }
 
   function cancelPlayHold() {
@@ -353,10 +360,12 @@
   playBtn.addEventListener('pointermove', (e) => {
     if (!playHoldState || e.pointerId !== playHoldState.pointerId) return;
     const rect = playBtn.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const dist = Math.hypot(e.clientX - cx, e.clientY - cy);
-    if (dist > rect.width * 0.65) {
+    if (
+      e.clientX < rect.left - 24 ||
+      e.clientX > rect.right + 24 ||
+      e.clientY < rect.top - 24 ||
+      e.clientY > rect.bottom + 24
+    ) {
       cancelPlayHold();
     }
   });

@@ -222,28 +222,36 @@ body {
 
 .play-btn {
   position: relative;
-  width: 176px;
-  height: 176px;
-  padding: 0;
-  border-radius: 50%;
+  width: clamp(270px, 52vw, 400px);
+  height: clamp(220px, 44vh, 290px);
+  padding: 20px;
+  border-radius: 38px;
   border: none;
-  background: rgba(7, 8, 11, 0.45);
+  background: rgba(14, 17, 25, 0.82);
+  backdrop-filter: blur(6px);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 12px;
   cursor: pointer;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
-  transition: transform 0.12s ease, opacity 0.2s ease;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.68);
+  transition: transform 0.12s ease, opacity 0.2s ease, box-shadow 0.2s ease;
   touch-action: none;
 }
 
 .play-btn.holding {
-  transform: scale(0.95);
+  transform: scale(0.96);
 }
 
-.play-btn.ready,
+.play-btn.ready {
+  opacity: 1;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.72), 0 0 32px rgba(20, 184, 166, 0.28);
+}
+
 .play-btn.playing {
   opacity: 1;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.72), 0 0 32px rgba(225, 29, 72, 0.34);
 }
 
 .play-btn.disabled {
@@ -253,12 +261,22 @@ body {
 .play-icon-img {
   position: relative;
   z-index: 1;
-  width: 152px;
-  height: 152px;
+  width: clamp(132px, 24vh, 172px);
+  height: clamp(132px, 24vh, 172px);
   border-radius: 50%;
   object-fit: contain;
   pointer-events: none;
   transition: filter 0.2s ease, opacity 0.2s ease;
+}
+
+.play-action-hint {
+  position: relative;
+  z-index: 1;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: 0.01em;
+  pointer-events: none;
 }
 
 .play-btn.disabled .play-icon-img {
@@ -266,13 +284,16 @@ body {
   filter: grayscale(0.85);
 }
 
+.play-btn.disabled .play-action-hint {
+  color: var(--text-muted);
+}
+
 .play-ring {
   position: absolute;
   inset: 0;
   z-index: 2;
-  width: 176px;
-  height: 176px;
-  transform: rotate(-90deg);
+  width: 100%;
+  height: 100%;
   pointer-events: none;
 }
 
@@ -287,8 +308,8 @@ body {
   stroke: #ffffff;
   stroke-width: 7;
   stroke-linecap: round;
-  stroke-dasharray: 515.22;
-  stroke-dashoffset: 515.22;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
 }
 
 .play-icon {

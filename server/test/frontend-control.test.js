@@ -80,7 +80,7 @@ function createControlSandbox({ fetchImpl } = {}) {
 
   const ids = [
     'dot-wrap-A', 'dot-wrap-B', 'dot-A', 'dot-B', 'dl-A', 'dl-B', 'conn-pill',
-    'settings-btn', 'settings-ring', 'play-btn', 'play-ring', 'play-icon', 'cooldown-label',
+    'settings-btn', 'settings-ring', 'play-btn', 'play-ring', 'play-icon', 'play-hint', 'cooldown-label',
     'timeline-fill', 'timeline-thumb', 'time-text', 'toast',
     'msg-btn', 'msg-sheet-backdrop', 'msg-sheet-close', 'msg-select-step', 'msg-confirm-step',
     'preset-grid', 'custom-msg-form', 'custom-msg-input', 'msg-confirm-preview', 'msg-cancel-btn', 'msg-send-btn',
