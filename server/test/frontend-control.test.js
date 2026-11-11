@@ -100,8 +100,9 @@ function createControlSandbox({ fetchImpl } = {}) {
     'control-server-modal', 'control-server-close', 'preauth-server-current', 'control-server-input',
     'control-server-error', 'control-reset-server-btn', 'control-save-server-btn',
     'settings-modal', 'settings-close-btn', 'fullscreen-btn', 'admin-logout-btn',
-    'tab-devices', 'tab-videos', 'tab-presets', 'tab-pin', 'tab-server',
+    'tab-devices', 'tab-videos', 'tab-presets', 'tab-pin', 'tab-logs', 'tab-server',
     'device-detail-grid', 'required-displays-select', 'offset-A-input', 'offset-B-input',
+    'offset-preset-wired', 'offset-preset-bt-a', 'offset-preset-bt-b',
     'save-device-config-btn', 'resync-btn', 'disk-free-label',
     'video-upload-input', 'video-upload-dropzone', 'video-upload-title', 'video-upload-file-meta',
     'video-upload-btn', 'video-upload-cancel-btn',
@@ -111,16 +112,18 @@ function createControlSandbox({ fetchImpl } = {}) {
     'preset-editor-list', 'add-preset-btn', 'save-presets-btn',
     'change-pin-form', 'current-pin-input', 'new-admin-pin-input', 'new-display-pin-input',
     'new-settings-pin-input', 'change-pin-error',
+    'logs-refresh-btn', 'logs-clear-btn', 'logs-list-container',
     'settings-server-api', 'settings-server-ws', 'settings-server-input',
-    'settings-server-error', 'settings-reset-server-btn', 'settings-save-server-btn'
+    'settings-server-error', 'settings-reset-server-btn', 'settings-save-server-btn',
+    'friendly-error-modal', 'friendly-error-title', 'friendly-error-desc', 'friendly-error-close'
   ];
 
   const hiddenByDefault = new Set([
     'dl-A', 'dl-B', 'conn-pill', 'cooldown-label', 'toast',
     'msg-sheet-backdrop', 'msg-confirm-step', 'auth-modal', 'auth-cancel-btn',
-    'control-server-modal', 'settings-modal',
+    'control-server-modal', 'settings-modal', 'friendly-error-modal',
     'video-upload-cancel-btn', 'video-upload-progress-wrap', 'video-preview-card',
-    'tab-videos', 'tab-presets', 'tab-pin', 'tab-server'
+    'tab-videos', 'tab-presets', 'tab-pin', 'tab-logs', 'tab-server'
   ]);
 
   for (const id of ids) {
@@ -129,13 +132,19 @@ function createControlSandbox({ fetchImpl } = {}) {
     elements.set(id, el);
   }
 
-  const tabBtns = ['devices', 'videos', 'presets', 'pin', 'server'].map((t) => {
+  const tabBtns = ['devices', 'videos', 'presets', 'pin', 'logs', 'server'].map((t) => {
     const btn = createMockElement(`tab-btn-${t}`, 'BUTTON');
     btn.dataset.tab = t;
     if (t === 'devices') btn.classList.add('active');
     return btn;
   });
-  const tabPanes = ['devices', 'videos', 'presets', 'pin', 'server'].map((t) => elements.get(`tab-${t}`));
+  const tabPanes = ['devices', 'videos', 'presets', 'pin', 'logs', 'server'].map((t) => elements.get(`tab-${t}`));
+  const logFilterBtns = ['all', 'error', 'play'].map((f) => {
+    const btn = createMockElement(`log-filter-${f}`, 'BUTTON');
+    btn.dataset.logFilter = f;
+    if (f === 'all') btn.classList.add('active');
+    return btn;
+  });
 
   const createdSockets = [];
   class MockWebSocket {
@@ -247,6 +256,7 @@ function createControlSandbox({ fetchImpl } = {}) {
       querySelectorAll: (sel) => {
         if (sel === '.tab-btn') return tabBtns;
         if (sel === '.tab-pane') return tabPanes;
+        if (sel === '.log-filter-btn') return logFilterBtns;
         return [];
       },
       addEventListener: () => {}
@@ -556,12 +566,23 @@ describe('frontend control Phase 3', () => {
       assert.equal(elements.get('settings-server-api').textContent, 'http://localhost:3000');
       assert.equal(elements.get('settings-server-ws').textContent, 'ws://localhost:3000/ws');
 
+      // WS error on the active socket opens calm friendly error modal ("오류가 발생했어요! 잠시만요.") without exposing raw code on main UI
+      const liveWs = createdSockets[createdSockets.length - 1];
+      liveWs._emitOpen();
+      liveWs._emitMessage({ t: 'error', action: 'play', error: 'not_ready' });
+      assert.equal(elements.get('friendly-error-modal').classList.contains('hidden'), false);
+      assert.equal(elements.get('friendly-error-title').textContent, '오류가 발생했어요!');
+      assert.ok(elements.get('friendly-error-desc').textContent.includes('잠시만요'));
+      assert.ok(!elements.get('friendly-error-desc').textContent.includes('not_ready'));
+      elements.get('friendly-error-close').dispatch('click');
+      assert.equal(elements.get('friendly-error-modal').classList.contains('hidden'), true);
+
       // Leaving Settings clears the settings session token so next entry requires Settings PIN
       elements.get('settings-close-btn').dispatch('click');
       assert.equal(elements.get('settings-modal').classList.contains('hidden'), true);
       assert.equal(session.get('ghost_admin_token'), undefined);
 
-      // Phase 4 control markup has real upload & preview controls, white upload icon, Pretendard font, and no placeholder notice
+      // Phase 4 & 5 control markup has upload dropzone, logs tab, Bluetooth presets, friendly modal, Pretendard font
       const ctrlHtml = fs.readFileSync(path.join(FRONTEND_DIR, 'control.html'), 'utf8');
       const ctrlCss = fs.readFileSync(path.join(FRONTEND_DIR, 'control.css'), 'utf8');
       assert.ok(ctrlHtml.includes('id="video-upload-input"'));
@@ -570,6 +591,9 @@ describe('frontend control Phase 3', () => {
       assert.ok(ctrlHtml.includes('id="video-upload-btn"'));
       assert.ok(ctrlHtml.includes('id="booth-test-play-btn"'));
       assert.ok(ctrlHtml.includes('id="video-preview-player"'));
+      assert.ok(ctrlHtml.includes('id="tab-logs"'));
+      assert.ok(ctrlHtml.includes('id="friendly-error-modal"'));
+      assert.ok(ctrlHtml.includes('id="offset-preset-bt-a"'));
       assert.ok(!ctrlHtml.includes('4단계에서 활성화됩니다'));
       assert.ok(ctrlCss.includes("Pretendard-Regular.woff2"));
       assert.ok(ctrlCss.includes('font-weight: 400'));

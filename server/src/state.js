@@ -136,6 +136,16 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     };
   }
 
+  function safeLog(entry) {
+    if (typeof db.addLog === 'function') {
+      try {
+        db.addLog(entry);
+      } catch {
+        // ignore log errors
+      }
+    }
+  }
+
   function emitStatus() {
     if (typeof onBroadcast === 'function') {
       onBroadcast(getSnapshot());
@@ -146,6 +156,18 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     clearPlaybackTimers();
     if (playback && playback.playLogId) {
       db.finishPlayLog(playback.playLogId, endedBy, Date.now());
+      safeLog({
+        level: endedBy === 'timeout' ? 'warn' : 'info',
+        source: 'server',
+        code: `playback_${endedBy}`,
+        message:
+          endedBy === 'timeout'
+            ? '재생 안전 타임아웃으로 자동 종료되었습니다.'
+            : endedBy === 'stop'
+              ? '재생이 수동 정지되었습니다.'
+              : '영상 재생이 정상 종료되었습니다.',
+        detail: playback.videoId
+      });
     }
     playback = null;
     displays.A.pos = 0;
@@ -179,6 +201,12 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     d.pos = 0;
     d.lastSeen = Date.now();
     d.error = null;
+    safeLog({
+      level: 'info',
+      source: `display-${id}`,
+      code: 'display_connected',
+      message: `체험자 기기 ${id} 연결됨`
+    });
     recomputeState();
     emitStatus();
   }
@@ -187,6 +215,12 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     const d = displays[id];
     if (!d) return;
     d.connected = false;
+    safeLog({
+      level: 'warn',
+      source: `display-${id}`,
+      code: 'display_disconnected',
+      message: `체험자 기기 ${id} 연결 해제`
+    });
     recomputeState();
 
     // If playing, detach this display from active run so a reconnect does not stall completion
@@ -238,7 +272,17 @@ function createStateMachine({ config, db, onBroadcast, onSendToDisplays, onClose
     if (typeof payload.offsetMs === 'number' && Number.isFinite(payload.offsetMs)) {
       d.offsetMs = Math.round(payload.offsetMs);
     }
-    d.error = payload.error ? String(payload.error).slice(0, 200) : null;
+    const nextErr = payload.error ? String(payload.error).slice(0, 200) : null;
+    if (nextErr && nextErr !== d.error) {
+      safeLog({
+        level: 'error',
+        source: `display-${id}`,
+        code: nextErr,
+        message: `체험자 기기 ${id} 오류 보고`,
+        detail: nextErr
+      });
+    }
+    d.error = nextErr;
     recomputeState();
     emitStatus();
   }

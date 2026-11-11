@@ -731,6 +731,40 @@ describe('HTTP & WebSocket server integration', () => {
     assert.equal(fontRes.status, 200);
     assert.equal(fontRes.headers.get('content-type'), 'font/woff2');
 
+    // Logs API: control/display can POST logs, ONLY admin can GET or DELETE logs
+    const postLog = await fetch(`${baseUrl}/logs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${dispAuth.token}`
+      },
+      body: JSON.stringify({
+        level: 'error',
+        code: 'bt_headset_drop',
+        message: '블루투스 이어폰 일시 끊김'
+      })
+    });
+    assert.equal(postLog.status, 200);
+
+    const forbiddenLogs = await fetch(`${baseUrl}/logs`, {
+      headers: { Authorization: `Bearer ${ctrlAuth.token}` }
+    });
+    assert.equal(forbiddenLogs.status, 403);
+
+    const adminLogs = await fetch(`${baseUrl}/logs`, {
+      headers: { Authorization: `Bearer ${adminAuth.token}` }
+    }).then((r) => r.json());
+    assert.equal(adminLogs.ok, true);
+    assert.ok(adminLogs.logs.some((l) => l.code === 'bt_headset_drop'));
+    assert.ok(Array.isArray(adminLogs.playLogs));
+
+    const cleared = await fetch(`${baseUrl}/logs`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${adminAuth.token}` }
+    }).then((r) => r.json());
+    assert.equal(cleared.ok, true);
+    assert.equal(cleared.logs.some((l) => l.code === 'bt_headset_drop'), false);
+
     wsA.close();
   });
 });

@@ -3,12 +3,13 @@
 갤럭시탭 S6 FE Lite 조종기기 1대로 체험자용 태블릿(A, B) 2대의 전체화면 영상 재생을 원격 동기 제어하는 시스템입니다.
 
 ## 아키텍처 요약
-상세 결정 사항은 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)를 참고하세요.
-- **프론트엔드**: 순수 HTML / CSS / JavaScript (`frontend/`), Netlify 정적 호스팅 (개발 시 Node 서버 직접 서빙 지원)
+상세 결정 사항은 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md), 배포·현장 가이드는 [`docs/DEPLOYMENT_GUIDE.md`](./docs/DEPLOYMENT_GUIDE.md)를 참고하세요.
+- **프론트엔드**: 순수 HTML / CSS / JavaScript (`frontend/`, 로컬 번들 `Pretendard Regular` 폰트 포함), Netlify 정적 호스팅 (개발 시 Node 서버 직접 서빙 지원)
 - **백엔드**: Node.js 22 (`http` + `ws` + `busboy`), Oracle Cloud Always Free VM + Caddy(DuckDNS 자동 HTTPS/WSS)
-- **데이터베이스**: 내장 SQLite (`node:sqlite`, WAL 모드) — 0원, 유휴 중단 없음, 0ms 로컬 액세스
-- **영상 정책**: 최대 파일 크기 제한 없음 (디스크 스트리밍 업로드 + IndexedDB 청크 캐싱), 이전 영상 최근 3개 보관
-- **오디오**: 3.5mm 유선 이어폰 권장 (기기별 `audioOffsets` 보정 및 설정 화면 테스트 재생 지원)
+- **데이터베이스**: 내장 SQLite (`node:sqlite`, WAL 모드) — 0원, 유휴 중단 없음, 0ms 로컬 액세스, 재생·오류 로그 보관
+- **영상 정책**: 최대 파일 크기 제한 없음 (디스크 스트리밍 업로드 + IndexedDB 8MB 청크 캐싱), 이전 영상 최근 3개 보관
+- **오디오**: 3.5mm 유선 이어폰 및 블루투스 헤드셋/에어팟 대응 (블루투스 A2DP 무음 슬립 방지 유지 + 기기별 `audioOffsets` ±ms 보정 + 설정 화면 테스트 재생)
+- **오류/로그**: 일반 화면에는 `"오류가 발생했어요! 잠시만요."` 안내 팝업만 노출하고, 상세 오류·재생 이력은 관리자 설정의 **`로그 기록`** 탭에서만 조회·관리
 - **보안**: 3중 PIN 분리 (`admincgo2631` 관리자/조종 로그인 · `cgo2631` 체험자 로그인 · `adminsetmg` 설정탭 진입, `scrypt` 해시, 5회 실패 시 60초 잠금) + 스코프 기반 WebSocket/HTTP 토큰
 - **서버 주소 관리**: 일반/인증 화면에 서버 주소를 노출하지 않으며, 구석 톱니바퀴 아이콘 또는 관리자 설정의 **`서버 관리`** 탭에서만 확인·수정 가능
 

@@ -49,7 +49,8 @@ const API_PATH_PREFIXES = [
   '/stop',
   '/resync',
   '/test-play',
-  '/test-stop'
+  '/test-stop',
+  '/logs'
 ];
 
 function isApiPath(pathname) {

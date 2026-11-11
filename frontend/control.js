@@ -69,6 +69,9 @@
   const requiredDisplaysSelect = document.getElementById('required-displays-select');
   const offsetAInput = document.getElementById('offset-A-input');
   const offsetBInput = document.getElementById('offset-B-input');
+  const offsetPresetWired = document.getElementById('offset-preset-wired');
+  const offsetPresetBtA = document.getElementById('offset-preset-bt-a');
+  const offsetPresetBtB = document.getElementById('offset-preset-bt-b');
   const saveDeviceConfigBtn = document.getElementById('save-device-config-btn');
   const resyncBtn = document.getElementById('resync-btn');
 
@@ -101,12 +104,22 @@
   const newSettingsPinInput = document.getElementById('new-settings-pin-input');
   const changePinError = document.getElementById('change-pin-error');
 
+  const logsRefreshBtn = document.getElementById('logs-refresh-btn');
+  const logsClearBtn = document.getElementById('logs-clear-btn');
+  const logsListContainer = document.getElementById('logs-list-container');
+  const logFilterBtns = Array.from(document.querySelectorAll('.log-filter-btn'));
+
   const settingsServerApi = document.getElementById('settings-server-api');
   const settingsServerWs = document.getElementById('settings-server-ws');
   const settingsServerInput = document.getElementById('settings-server-input');
   const settingsServerError = document.getElementById('settings-server-error');
   const settingsResetServerBtn = document.getElementById('settings-reset-server-btn');
   const settingsSaveServerBtn = document.getElementById('settings-save-server-btn');
+
+  const friendlyErrorModal = document.getElementById('friendly-error-modal');
+  const friendlyErrorTitle = document.getElementById('friendly-error-title');
+  const friendlyErrorDesc = document.getElementById('friendly-error-desc');
+  const friendlyErrorClose = document.getElementById('friendly-error-close');
 
   let currentSnapshot = null;
   let presets = [
@@ -126,6 +139,8 @@
   let pendingControlReauth = false;
   let activeUploadXhr = null;
   let droppedUploadFile = null;
+  let activeLogFilter = 'all';
+  const clientLocalLogs = [];
   let wakeLock = null;
   let toastTimer = null;
   let settingsPollTimer = null;
@@ -150,6 +165,53 @@
       toastEl.classList.add('hidden');
     }, 2400);
   }
+
+  function recordClientLog({ level = 'error', source = 'control', code = null, message = '', detail = null }) {
+    const entry = {
+      id: `local-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+      createdAt: Date.now(),
+      level,
+      source,
+      code,
+      message,
+      detail
+    };
+    clientLocalLogs.unshift(entry);
+    if (clientLocalLogs.length > 100) clientLocalLogs.length = 100;
+
+    const token = getAdminToken() || window.localStorage.getItem(CONTROL_TOKEN_KEY) || '';
+    if (!token) return;
+    try {
+      fetch(`${window.GHOST_CONFIG.apiBase}/logs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'X-Ghost-Token': token
+        },
+        body: JSON.stringify({ level, source, code, message, detail })
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+  }
+
+  function showFriendlyError({
+    code = 'unknown_error',
+    message = '동작 중 오류 발생',
+    detail = null,
+    source = 'control',
+    level = 'error'
+  } = {}) {
+    recordClientLog({ level, source, code, message, detail });
+    friendlyErrorTitle.textContent = '오류가 발생했어요!';
+    friendlyErrorDesc.textContent = '잠시만요. 연결이나 기기 상태를 확인한 뒤 다시 시도해 주세요.';
+    friendlyErrorModal.classList.remove('hidden');
+  }
+
+  friendlyErrorClose.addEventListener('click', () => {
+    friendlyErrorModal.classList.add('hidden');
+  });
 
   function vibrate(pattern) {
     if (typeof navigator.vibrate === 'function') {
@@ -484,7 +546,11 @@
         if (msg.action === 'msg' && msg.error === 'duplicate_message') {
           showToast('동일한 메시지는 2초 후 재전송할 수 있습니다.');
         } else if (msg.error) {
-          showToast(`요청 거부: ${msg.error}`);
+          showFriendlyError({
+            code: msg.error,
+            message: '실시간 제어 요청 오류',
+            detail: msg.action || null
+          });
         }
       }
     },
@@ -791,7 +857,7 @@
         ['캐시 상태', d.ready ? '준비 완료 (100%)' : `${Number(d.dl || 0)}%`],
         ['마지막 하트비트', heartbeatAgo],
         ['시계 오차 / RTT', d.rttMs !== null ? `${d.offsetMs ?? 0}ms / ${d.rttMs}ms` : '미측정'],
-        ['오류', d.error || '없음']
+        ['오류', d.error ? '발생 (로그 기록 참고)' : '없음']
       ];
 
       for (const [k, v] of rows) {
@@ -969,13 +1035,23 @@
       );
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        showToast(`영상 적용 실패: ${data.reason || data.error || '상태를 확인하세요'}`);
+        showFriendlyError({
+          source: 'admin',
+          code: data.reason || data.error || `http_${res.status}`,
+          message: '활성 영상 변경 실패',
+          detail: videoId
+        });
         return;
       }
       renderVideoList(data.videos || []);
       showToast('선택한 영상을 활성 영상으로 전환했습니다. 기기들이 자동 동기화합니다.');
-    } catch {
-      showToast('서버 통신 오류');
+    } catch (err) {
+      showFriendlyError({
+        source: 'admin',
+        code: 'network_error',
+        message: '활성 영상 변경 통신 실패',
+        detail: err?.message || videoId
+      });
     }
   }
 
@@ -990,14 +1066,159 @@
       );
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        showToast(`삭제 실패: ${data.error || '오류'}`);
+        showFriendlyError({
+          source: 'admin',
+          code: data.error || `http_${res.status}`,
+          message: '보관 영상 삭제 실패',
+          detail: `${filename} (${videoId})`
+        });
         return;
       }
       diskFreeLabel.textContent = `디스크 여유: ${formatBytes(data.diskFreeBytes)}`;
       renderVideoList(data.videos || []);
       showToast(`'${filename}' 영상을 삭제했습니다.`);
+    } catch (err) {
+      showFriendlyError({
+        source: 'admin',
+        code: 'network_error',
+        message: '보관 영상 삭제 통신 실패',
+        detail: err?.message || videoId
+      });
+    }
+  }
+
+  function renderLogsTab({ logs = [], playLogs = [] }) {
+    if (!logsListContainer) return;
+    logsListContainer.textContent = '';
+
+    if (activeLogFilter === 'play') {
+      if (!playLogs.length) {
+        const empty = document.createElement('p');
+        empty.className = 'modal-desc';
+        empty.textContent = '아직 재생 이력이 없습니다.';
+        logsListContainer.appendChild(empty);
+        return;
+      }
+      for (const p of playLogs) {
+        const card = document.createElement('div');
+        card.className = 'log-entry';
+        const head = document.createElement('div');
+        head.className = 'log-entry-head';
+        const title = document.createElement('span');
+        title.textContent = p.filename || p.videoId;
+        const ts = document.createElement('span');
+        ts.className = 'muted-meta';
+        ts.textContent = p.startedAt
+          ? new Date(p.startedAt).toLocaleString('ko-KR')
+          : '-';
+        head.appendChild(title);
+        head.appendChild(ts);
+
+        const detail = document.createElement('div');
+        detail.className = 'log-entry-detail';
+        const durSec =
+          p.endedAt && p.startedAt ? Math.max(0, Math.round((p.endedAt - p.startedAt) / 1000)) : 0;
+        const reasonMap = { end: '정상 종료', stop: '수동 정지', timeout: '안전 타임아웃' };
+        detail.textContent = `종료: ${reasonMap[p.endedBy] || '진행/미상'} · 재생 시간: ${formatTime(durSec)}`;
+
+        card.appendChild(head);
+        card.appendChild(detail);
+        logsListContainer.appendChild(card);
+      }
+      return;
+    }
+
+    const merged = [...logs];
+    for (const localItem of clientLocalLogs) {
+      if (
+        !merged.some(
+          (s) =>
+            s.code === localItem.code &&
+            Math.abs((s.createdAt || 0) - localItem.createdAt) < 3000
+        )
+      ) {
+        merged.push(localItem);
+      }
+    }
+    merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+    const filtered =
+      activeLogFilter === 'error' ? merged.filter((l) => l.level === 'error') : merged;
+
+    if (!filtered.length) {
+      const empty = document.createElement('p');
+      empty.className = 'modal-desc';
+      empty.textContent =
+        activeLogFilter === 'error' ? '기록된 오류가 없습니다.' : '기록된 로그가 없습니다.';
+      logsListContainer.appendChild(empty);
+      return;
+    }
+
+    for (const item of filtered) {
+      const card = document.createElement('div');
+      card.className = `log-entry ${item.level || 'info'}`;
+
+      const head = document.createElement('div');
+      head.className = 'log-entry-head';
+
+      const meta = document.createElement('div');
+      meta.className = 'log-entry-meta';
+
+      const badge = document.createElement('span');
+      badge.className = `log-badge ${item.level || 'info'}`;
+      badge.textContent =
+        item.level === 'error' ? '오류' : item.level === 'warn' ? '경고' : '정보';
+
+      const src = document.createElement('span');
+      src.className = 'muted-meta';
+      src.textContent = item.source || 'server';
+
+      meta.appendChild(badge);
+      meta.appendChild(src);
+
+      const ts = document.createElement('span');
+      ts.className = 'muted-meta';
+      ts.textContent = item.createdAt
+        ? new Date(item.createdAt).toLocaleString('ko-KR')
+        : '-';
+
+      head.appendChild(meta);
+      head.appendChild(ts);
+
+      const msgEl = document.createElement('div');
+      msgEl.textContent = item.message || item.code || '-';
+
+      card.appendChild(head);
+      card.appendChild(msgEl);
+
+      if (item.code || item.detail) {
+        const detailEl = document.createElement('div');
+        detailEl.className = 'log-entry-detail';
+        detailEl.textContent = [item.code, item.detail].filter(Boolean).join(' · ');
+        card.appendChild(detailEl);
+      }
+
+      logsListContainer.appendChild(card);
+    }
+  }
+
+  async function refreshLogsTab() {
+    const token = getAdminToken();
+    if (!token) return;
+    try {
+      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/logs`, {
+        headers: getAdminHeaders()
+      });
+      if (!res.ok) {
+        renderLogsTab({ logs: [], playLogs: [] });
+        return;
+      }
+      const data = await res.json();
+      if (data.ok) {
+        renderLogsTab({ logs: data.logs || [], playLogs: data.playLogs || [] });
+      }
     } catch {
-      showToast('서버 통신 오류');
+      renderLogsTab({ logs: [], playLogs: [] });
     }
   }
 
@@ -1016,7 +1237,11 @@
       }
 
       if (settingsRes.status === 401 || settingsRes.status === 403) {
-        showToast('설정 인증 확인에 실패했습니다. 설정탭을 나간 후 다시 로그인해 주세요.');
+        showFriendlyError({
+          source: 'admin',
+          code: `settings_auth_${settingsRes.status}`,
+          message: '설정 권한 확인 실패'
+        });
         return;
       }
 
@@ -1040,8 +1265,13 @@
         const statusData = await statusRes.json();
         renderStatus(statusData);
       }
-    } catch {
-      showToast('설정 정보를 불러오지 못했습니다.');
+    } catch (err) {
+      showFriendlyError({
+        source: 'admin',
+        code: 'settings_load_failed',
+        message: '설정 불러오기 실패',
+        detail: err?.message || null
+      });
     }
   }
 
@@ -1113,9 +1343,63 @@
       }
       if (target === 'videos') {
         refreshVideosList();
+      } else if (target === 'logs') {
+        refreshLogsTab();
       }
     });
   }
+
+  for (const fBtn of logFilterBtns) {
+    fBtn.addEventListener('click', () => {
+      activeLogFilter = fBtn.dataset.logFilter || 'all';
+      for (const b of logFilterBtns) b.classList.toggle('active', b === fBtn);
+      refreshLogsTab();
+    });
+  }
+
+  logsRefreshBtn.addEventListener('click', () => {
+    refreshLogsTab();
+  });
+
+  logsClearBtn.addEventListener('click', async () => {
+    clientLocalLogs.length = 0;
+    try {
+      const res = await fetch(`${window.GHOST_CONFIG.apiBase}/logs`, {
+        method: 'DELETE',
+        headers: getAdminHeaders()
+      });
+      if (!res.ok) {
+        showFriendlyError({
+          source: 'admin',
+          code: `logs_clear_${res.status}`,
+          message: '로그 삭제 실패'
+        });
+        return;
+      }
+      refreshLogsTab();
+      showToast('로그를 비웠습니다.');
+    } catch (err) {
+      showFriendlyError({
+        source: 'admin',
+        code: 'logs_clear_network',
+        message: '로그 삭제 통신 오류',
+        detail: err?.message || null
+      });
+    }
+  });
+
+  offsetPresetWired.addEventListener('click', () => {
+    offsetAInput.value = '0';
+    offsetBInput.value = '0';
+  });
+  offsetPresetBtA.addEventListener('click', () => {
+    offsetAInput.value = '-180';
+    offsetBInput.value = '0';
+  });
+  offsetPresetBtB.addEventListener('click', () => {
+    offsetAInput.value = '0';
+    offsetBInput.value = '-180';
+  });
 
   fullscreenBtn.addEventListener('click', async () => {
     if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
@@ -1143,12 +1427,21 @@
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        showToast(`테스트 재생 불가: ${data.reason || '연결/캐시 상태를 확인하세요'}`);
+        showFriendlyError({
+          source: 'admin',
+          code: data.reason || data.error || `http_${res.status}`,
+          message: '테스트 재생 시작 실패'
+        });
         return;
       }
       showToast('연결된 체험자 기기에서 테스트 재생을 시작합니다.');
-    } catch {
-      showToast('서버 통신 오류');
+    } catch (err) {
+      showFriendlyError({
+        source: 'admin',
+        code: 'test_play_network',
+        message: '테스트 재생 통신 오류',
+        detail: err?.message || null
+      });
     }
   });
 
@@ -1164,8 +1457,13 @@
         return;
       }
       showToast('테스트 재생을 정지했습니다.');
-    } catch {
-      showToast('서버 통신 오류');
+    } catch (err) {
+      showFriendlyError({
+        source: 'admin',
+        code: 'test_stop_network',
+        message: '테스트 정지 통신 오류',
+        detail: err?.message || null
+      });
     }
   });
 
@@ -1277,25 +1575,24 @@
         return;
       }
 
-      const errMap = {
-        missing_token: '설정 인증 토큰이 전달되지 않았습니다. 설정을 닫았다가 다시 열어 주세요.',
-        token_expired: '설정 인증 시간이 만료되었습니다. 설정을 다시 열어 주세요.',
-        invalid_signature: '서버가 재시작되어 인증이 초기화되었습니다. 설정을 다시 열어 주세요.',
-        forbidden_scope: '관리자 설정 권한이 필요합니다.',
-        invalid_mp4_header: '유효한 MP4(H.264/AAC) 파일이 아닙니다.',
-        missing_moov_box: 'MP4 메타데이터(moov)가 손상되었거나 없습니다.',
-        missing_media_track: '영상/오디오 트랙을 찾을 수 없습니다.',
-        invalid_mp4_duration: 'MP4 재생 길이를 확인할 수 없습니다.',
-        insufficient_disk_space: '서버 디스크 여유 공간이 부족합니다.',
-        busy_cannot_upload: '재생 중이거나 다른 업로드가 진행 중입니다.'
-      };
-      videoUploadError.textContent = errMap[data.error] || `업로드 실패 (${data.error || xhr.status})`;
+      const errCode = data.error || `http_${xhr.status}`;
+      showFriendlyError({
+        source: 'admin',
+        code: errCode,
+        message: '영상 업로드 실패',
+        detail: file?.name || null
+      });
     };
 
     xhr.onerror = () => {
       activeUploadXhr = null;
       setUploadUiState(false, 0, '');
-      videoUploadError.textContent = '네트워크 오류로 업로드에 실패했습니다.';
+      showFriendlyError({
+        source: 'admin',
+        code: 'upload_network_error',
+        message: '영상 업로드 네트워크 오류',
+        detail: file?.name || null
+      });
     };
 
     xhr.onabort = () => {
@@ -1323,12 +1620,21 @@
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        showToast('구성 저장 실패');
+        showFriendlyError({
+          source: 'admin',
+          code: data.error || `settings_save_${res.status}`,
+          message: '기기 구성 저장 실패'
+        });
         return;
       }
       showToast('기기 구성이 저장되었습니다.');
-    } catch {
-      showToast('서버 통신 오류');
+    } catch (err) {
+      showFriendlyError({
+        source: 'admin',
+        code: 'settings_save_network',
+        message: '기기 구성 저장 통신 오류',
+        detail: err?.message || null
+      });
     }
   });
 
@@ -1340,12 +1646,21 @@
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        showToast(`재동기화 불가: ${data.reason || '상태 확인'}`);
+        showFriendlyError({
+          source: 'admin',
+          code: data.reason || data.error || `resync_${res.status}`,
+          message: '강제 재동기화 실패'
+        });
         return;
       }
       showToast('A/B 기기에 영상 재다운로드 명령을 보냈습니다.');
-    } catch {
-      showToast('서버 통신 오류');
+    } catch (err) {
+      showFriendlyError({
+        source: 'admin',
+        code: 'resync_network',
+        message: '강제 재동기화 통신 오류',
+        detail: err?.message || null
+      });
     }
   });
 
@@ -1373,14 +1688,23 @@
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        showToast('프리셋 저장 실패');
+        showFriendlyError({
+          source: 'admin',
+          code: data.error || `presets_save_${res.status}`,
+          message: '메시지 프리셋 저장 실패'
+        });
         return;
       }
       presets = data.presets;
       renderPresetEditor(presets);
       showToast('메시지 프리셋이 저장되었습니다.');
-    } catch {
-      showToast('서버 통신 오류');
+    } catch (err) {
+      showFriendlyError({
+        source: 'admin',
+        code: 'presets_save_network',
+        message: '메시지 프리셋 저장 통신 오류',
+        detail: err?.message || null
+      });
     }
   });
 

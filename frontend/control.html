@@ -173,6 +173,7 @@
         <button type="button" class="tab-btn" data-tab="videos">영상 관리</button>
         <button type="button" class="tab-btn" data-tab="presets">프리셋 편집</button>
         <button type="button" class="tab-btn" data-tab="pin">PIN 변경</button>
+        <button type="button" class="tab-btn" data-tab="logs">로그 기록</button>
         <button type="button" class="tab-btn" data-tab="server">서버 관리</button>
       </nav>
 
@@ -200,6 +201,14 @@
                 <label for="offset-B-input">B 오디오 보정 (ms)</label>
                 <input type="number" id="offset-B-input" min="-2000" max="2000" step="10" value="0" />
               </div>
+            </div>
+            <p class="modal-desc">
+              에어팟·블루투스 헤드셋 사용 시 한쪽이 늦게 들리면 지연되는 기기를 -150 ~ -250ms로 당겨 맞출 수 있습니다.
+            </p>
+            <div class="settings-actions">
+              <button type="button" class="secondary-btn small" id="offset-preset-wired">유선 기본 (0ms)</button>
+              <button type="button" class="secondary-btn small" id="offset-preset-bt-a">A만 블루투스 (-180ms)</button>
+              <button type="button" class="secondary-btn small" id="offset-preset-bt-b">B만 블루투스 (-180ms)</button>
             </div>
             <div class="settings-actions">
               <button type="button" class="primary-btn" id="save-device-config-btn">구성 저장</button>
@@ -298,7 +307,26 @@
           </form>
         </div>
 
-        <!-- Tab 5: Server Management (ONLY place where server URL is shown inside settings) -->
+        <!-- Tab 5: Admin Logs (ONLY visible inside Admin Settings) -->
+        <div class="tab-pane hidden" id="tab-logs">
+          <div class="settings-card">
+            <div class="card-head-row">
+              <h3>관리자 로그 · 재생 이력</h3>
+              <div class="settings-actions">
+                <button type="button" class="secondary-btn small" id="logs-refresh-btn">새로고침</button>
+                <button type="button" class="danger-btn small" id="logs-clear-btn">로그 비우기</button>
+              </div>
+            </div>
+            <div class="logs-filter-row">
+              <button type="button" class="log-filter-btn active" data-log-filter="all">전체 로그</button>
+              <button type="button" class="log-filter-btn" data-log-filter="error">오류만</button>
+              <button type="button" class="log-filter-btn" data-log-filter="play">재생 이력</button>
+            </div>
+            <div id="logs-list-container" class="logs-list"></div>
+          </div>
+        </div>
+
+        <!-- Tab 6: Server Management (ONLY place where server URL is shown inside settings) -->
         <div class="tab-pane hidden" id="tab-server">
           <div class="settings-card">
             <h3>서버 관리</h3>
@@ -328,6 +356,19 @@
         </div>
       </div>
     </section>
+  </div>
+
+  <!-- Friendly Error Popup (never exposes raw codes/logs on main screen) -->
+  <div class="modal-backdrop top-popup hidden" id="friendly-error-modal" role="alertdialog" aria-modal="true" aria-labelledby="friendly-error-title">
+    <div class="modal-card friendly-error-card">
+      <h2 id="friendly-error-title">오류가 발생했어요!</h2>
+      <p class="modal-desc friendly-error-desc" id="friendly-error-desc">
+        잠시만요. 연결 상태를 확인한 뒤 다시 시도해 주세요.
+      </p>
+      <div class="modal-actions">
+        <button type="button" class="primary-btn" id="friendly-error-close">확인</button>
+      </div>
+    </div>
   </div>
 
   <script src="./config.js"></script>

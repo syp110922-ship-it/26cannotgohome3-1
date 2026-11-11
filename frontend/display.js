@@ -87,6 +87,31 @@
 
   let wakeLock = null;
   let audioCtx = null;
+  let audioKeepaliveTimer = null;
+
+  function reportDisplayLog(level, code, message, detail = null) {
+    try {
+      const token = window.localStorage.getItem(TOKEN_KEY) || '';
+      if (!token) return;
+      fetch(`${window.GHOST_CONFIG.apiBase}/logs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'X-Ghost-Token': token
+        },
+        body: JSON.stringify({
+          level,
+          source: `display-${deviceId}`,
+          code,
+          message,
+          detail
+        })
+      }).catch(() => {});
+    } catch {
+      // ignore log post errors
+    }
+  }
 
   let activeVideoMeta = null;
   let loadedVideoId = null;
@@ -188,6 +213,29 @@
     } catch {
       // Ignore silent audio prime errors
     }
+
+    // Keep Bluetooth headsets / AirPods A2DP link awake between shows
+    if (!audioKeepaliveTimer) {
+      audioKeepaliveTimer = setInterval(() => {
+        if (isPlaying) return;
+        try {
+          if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+          }
+          if (audioCtx && typeof audioCtx.createOscillator === 'function') {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            gain.gain.value = 0.00001;
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.05);
+          }
+        } catch {
+          // ignore
+        }
+      }, 25000);
+    }
   }
 
   document.addEventListener('visibilitychange', () => {
@@ -272,11 +320,13 @@
           return;
         }
         activeDownloadAbort = null;
+        const errCode = err?.message || 'cache_download_failed';
         reportDeviceState({
           cached: [],
           dl: 0,
-          error: err?.message || 'cache_download_failed'
+          error: errCode
         });
+        reportDisplayLog('error', errCode, `기기 ${deviceId} 영상 캐시 실패`, meta.videoId);
         return;
       }
     }
@@ -315,6 +365,7 @@
       loadedVideoId = null;
       resetToBlackStandby();
       reportDeviceState({ cached: [], dl: 0, error: 'video_decode_error' });
+      reportDisplayLog('error', 'video_decode_error', `기기 ${deviceId} 영상 디코딩 실패`, videoId);
     };
 
     player.addEventListener('canplaythrough', onReady);

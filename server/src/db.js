@@ -56,6 +56,19 @@ function createDatabase(config) {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS event_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at INTEGER NOT NULL,
+      level TEXT NOT NULL CHECK (level IN ('info', 'warn', 'error')),
+      source TEXT NOT NULL,
+      code TEXT,
+      message TEXT NOT NULL,
+      detail TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_event_log_created_at
+      ON event_log(created_at DESC, id DESC);
   `);
 
   const stmtGetSetting = db.prepare('SELECT value FROM settings WHERE key = ?');
@@ -382,6 +395,79 @@ function createDatabase(config) {
     };
   }
 
+  const stmtListPlayLogs = db.prepare(`
+    SELECT p.id, p.video_id, v.filename, p.started_at, p.ended_at, p.ended_by
+    FROM play_log p
+    LEFT JOIN videos v ON v.id = p.video_id
+    ORDER BY p.started_at DESC, p.id DESC
+    LIMIT ?
+  `);
+
+  function listPlayLogs({ limit = 50 } = {}) {
+    const safeLimit = Math.max(1, Math.min(200, Number(limit) || 50));
+    return stmtListPlayLogs.all(safeLimit).map((r) => ({
+      id: r.id,
+      videoId: r.video_id,
+      filename: r.filename || r.video_id,
+      startedAt: r.started_at,
+      endedAt: r.ended_at,
+      endedBy: r.ended_by
+    }));
+  }
+
+  const stmtInsertEventLog = db.prepare(
+    'INSERT INTO event_log(created_at, level, source, code, message, detail) VALUES(?, ?, ?, ?, ?, ?)'
+  );
+  const stmtPruneEventLog = db.prepare(
+    'DELETE FROM event_log WHERE id NOT IN (SELECT id FROM event_log ORDER BY id DESC LIMIT 500)'
+  );
+  const stmtListEventLogsAll = db.prepare(
+    'SELECT id, created_at, level, source, code, message, detail FROM event_log ORDER BY id DESC LIMIT ?'
+  );
+  const stmtListEventLogsByLevel = db.prepare(
+    'SELECT id, created_at, level, source, code, message, detail FROM event_log WHERE level = ? ORDER BY id DESC LIMIT ?'
+  );
+  const stmtClearEventLogs = db.prepare('DELETE FROM event_log');
+
+  function addLog({
+    level = 'info',
+    source = 'server',
+    code = null,
+    message = '',
+    detail = null,
+    createdAt = Date.now()
+  }) {
+    const cleanLevel = ['info', 'warn', 'error'].includes(level) ? level : 'info';
+    const cleanSource = String(source || 'server').slice(0, 32);
+    const cleanCode = code ? String(code).slice(0, 64) : null;
+    const cleanMessage = String(message || cleanCode || 'event').slice(0, 300);
+    const cleanDetail = detail ? String(detail).slice(0, 1000) : null;
+
+    stmtInsertEventLog.run(createdAt, cleanLevel, cleanSource, cleanCode, cleanMessage, cleanDetail);
+    stmtPruneEventLog.run();
+  }
+
+  function listLogs({ level = null, limit = 200 } = {}) {
+    const safeLimit = Math.max(1, Math.min(500, Number(limit) || 200));
+    const rows =
+      level && ['info', 'warn', 'error'].includes(level)
+        ? stmtListEventLogsByLevel.all(level, safeLimit)
+        : stmtListEventLogsAll.all(safeLimit);
+    return rows.map((r) => ({
+      id: r.id,
+      createdAt: r.created_at,
+      level: r.level,
+      source: r.source,
+      code: r.code,
+      message: r.message,
+      detail: r.detail
+    }));
+  }
+
+  function clearLogs() {
+    stmtClearEventLogs.run();
+  }
+
   function close() {
     db.close();
   }
@@ -420,6 +506,10 @@ function createDatabase(config) {
     startPlayLog,
     finishPlayLog,
     getPlayStats,
+    listPlayLogs,
+    addLog,
+    listLogs,
+    clearLogs,
     close
   };
 }

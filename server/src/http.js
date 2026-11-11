@@ -739,6 +739,17 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
             req.unpipe(bb);
             safeUnlink(tmpPath);
             sm.setUploading(false);
+            try {
+              db.addLog({
+                level: 'error',
+                source: 'server',
+                code: errorCode,
+                message: '영상 업로드 실패',
+                detail: `${cleanFilename || 'unknown'} (${errorCode})`
+              });
+            } catch {
+              // ignore log error
+            }
             if (!res.headersSent) {
               sendJson(res, statusCode, { ok: false, error: errorCode });
             }
@@ -839,6 +850,17 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
                   settled = true;
                   sm.setUploading(false);
                   sm.activateVideo(videoId);
+                  try {
+                    db.addLog({
+                      level: 'info',
+                      source: 'server',
+                      code: 'video_uploaded',
+                      message: `새 영상 업로드 완료: ${cleanFilename}`,
+                      detail: `${videoId} (${totalBytes}B, ${inspection.duration}s)`
+                    });
+                  } catch {
+                    // ignore log error
+                  }
                   sendJson(res, 200, {
                     ok: true,
                     video,
@@ -960,6 +982,17 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
 
         db.deleteVideo(videoId);
         safeUnlink(path.join(config.videosDir, `${videoId}.mp4`));
+        try {
+          db.addLog({
+            level: 'info',
+            source: 'admin',
+            code: 'video_deleted',
+            message: `보관 영상 삭제: ${video.filename}`,
+            detail: videoId
+          });
+        } catch {
+          // ignore
+        }
         sendJson(res, 200, {
           ok: true,
           videos: db.listVideos(),
@@ -987,6 +1020,17 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
           sendJson(res, result.reason === 'video_not_found' ? 404 : 409, result);
           return;
         }
+        try {
+          db.addLog({
+            level: 'info',
+            source: 'admin',
+            code: 'video_activated',
+            message: `활성 영상 변경: ${result.video.filename}`,
+            detail: videoId
+          });
+        } catch {
+          // ignore
+        }
         sendJson(res, 200, {
           ok: true,
           video: result.video,
@@ -1008,6 +1052,53 @@ function createHttpServer({ config, db, pinGuard, getStateMachine, onPinChanged 
         if (!claims) return;
         const result = sm.requestStop();
         sendJson(res, result.ok ? 200 : 409, result);
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/logs') {
+        const claims = requireAuth(req, res, url, ['admin']);
+        if (!claims) return;
+        const levelParam = url.searchParams.get('level');
+        const level = ['info', 'warn', 'error'].includes(levelParam) ? levelParam : null;
+        sendJson(res, 200, {
+          ok: true,
+          logs: db.listLogs({ level, limit: 200 }),
+          playLogs: db.listPlayLogs({ limit: 50 })
+        });
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/logs') {
+        if (!requireJsonContentType(req, res)) return;
+        const claims = requireAuth(req, res, url, ['admin', 'control', 'display']);
+        if (!claims) return;
+        const body = await readJsonBody(req);
+        const defaultSource =
+          claims.scope === 'display' && claims.deviceId
+            ? `display-${claims.deviceId}`
+            : claims.scope;
+        db.addLog({
+          level: body.level || 'error',
+          source: body.source || defaultSource,
+          code: body.code || null,
+          message: body.message || '클라이언트 이벤트',
+          detail: body.detail || null
+        });
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+
+      if (req.method === 'DELETE' && pathname === '/logs') {
+        const claims = requireAuth(req, res, url, ['admin']);
+        if (!claims) return;
+        db.clearLogs();
+        db.addLog({
+          level: 'info',
+          source: 'admin',
+          code: 'logs_cleared',
+          message: '관리자가 로그 기록을 비웠습니다.'
+        });
+        sendJson(res, 200, { ok: true, logs: db.listLogs({ limit: 200 }) });
         return;
       }
 
