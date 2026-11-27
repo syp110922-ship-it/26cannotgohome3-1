@@ -53,7 +53,7 @@
 ```
 ┌───────────────────────────┐         HTTPS / WSS          ┌───────────────────────────────────────┐
 │   Netlify (정적 호스팅)    │ ◄──────────────────────────► │ Oracle Cloud Always Free VM           │
-│ - control.html + bg.webp  │                              │ ┌───────────┐        ┌─────────────┐  │
+│ - control.html            │                              │ ┌───────────┐        ┌─────────────┐  │
 │ - display.html?id=A       │                              │ │   Caddy   │──────► │  Node.js 22 │  │
 │ - display.html?id=B       │   (로컬/개발 시 Node 직접 서빙) │ │ DuckDNS   │  http  │  http + ws  │  │
 └───────────────────────────┘                              │ │ Auto TLS  │  127.0 │  + busboy   │  │
@@ -150,7 +150,7 @@ CREATE TABLE settings (
 
 ## 6. 단계별 개발 계획
 
-1. **Phase 1 (완료)**: 최종 아키텍처 확정, 프로젝트/배포 뼈대, SQLite DB·PIN/토큰 인증·상태 머신·WebSocket 게이트웨이·시계 동기화, `control`/`display` 기본 뼈대 및 배경 `bg.webp` 변환, 단위/통합 테스트.
+1. **Phase 1 (완료)**: 최종 아키텍처 확정, 프로젝트/배포 뼈대, SQLite DB·PIN/토큰 인증·상태 머신·WebSocket 게이트웨이·시계 동기화, `control`/`display` 기본 뼈대, 단위/통합 테스트.
 2. **Phase 2**: `display.html` 본편 구현 (예약 시각 `startAt` 동기 재생, 검은 화면 복귀, `pos`/`ended` 보고, 5초 메시지 오버레이, 모서리 5초 길게 누름 숨겨진 관리자 진입).
 3. **Phase 3**: `control.html` 본편 구현 (0.6초 길게 누름 재생 원형 게이지+진동, 1초 길게 누름 정지, 읽기 전용 타임라인 보정, `⚙ 3초+PIN` 설정 화면·기기 상세 패널).
 4. **Phase 4**: 대용량 무제한 스트리밍 업로드(`busboy` + MP4 `mvhd` 파서)·이전 3개 자동 아카이브·`Range` 다운로드·`display` IndexedDB 청크 Blob 캐싱·증분 SHA-256 검증·테스트 재생.
