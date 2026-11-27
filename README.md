@@ -20,7 +20,6 @@
 │   └── AUDIT_AND_HOSTING.md  # 코드 검토 보고서 및 로컬/운영 호스팅 가이드
 ├── deploy/                   # Oracle VM Caddy / PM2 / systemd 예시 설정
 ├── frontend/                 # 순수 HTML/JS 프론트엔드 (control.html, display.html)
-│   ├── assets/bg.webp        # 폐가 일러스트 배경 (WebP 변환)
 │   ├── assets/gear.webp      # 서버 관리 모달용 톱니바퀴 아이콘 (투명 WebP)
 │   ├── assets/play-*.webp    # 재생/정지 패드 아이콘 (투명 WebP)
 │   └── shared/

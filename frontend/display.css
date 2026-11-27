@@ -83,7 +83,7 @@ strong {
   padding: 48px;
   text-align: center;
   font-size: clamp(30px, 5.2vw, 60px);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.35;
   letter-spacing: 0.02em;
   color: #fff1f2;
@@ -152,17 +152,17 @@ strong {
 
 .device-switch-link {
   padding: 5px 14px;
-  border-radius: 999px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: #0b0d12;
   color: rgba(255, 255, 255, 0.72);
   text-decoration: none;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .device-switch-link.active {
-  background: #e11d48;
+  background: #d2313c;
   border-color: transparent;
   color: #ffffff;
 }
@@ -174,7 +174,7 @@ strong {
   width: 34px;
   height: 34px;
   padding: 6px;
-  border-radius: 50%;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(16, 18, 24, 0.72);
   display: flex;
@@ -205,17 +205,17 @@ strong {
 .server-tab-pill {
   display: inline-block;
   padding: 5px 12px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: #232837;
   border: 1px solid rgba(255, 255, 255, 0.16);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .close-x {
   width: 34px;
   height: 34px;
-  border-radius: 50%;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: #1f2430;
   color: #f3f4f6;
@@ -243,12 +243,12 @@ strong {
 .info-tab-btn {
   flex: 1;
   padding: 8px 12px;
-  border-radius: 999px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: #0b0c10;
   color: rgba(255, 255, 255, 0.65);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
 }
 
@@ -332,10 +332,10 @@ strong {
   padding: 16px;
   border: none;
   border-radius: 12px;
-  background: #e11d48;
+  background: #d2313c;
   color: #ffffff;
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 500;
   cursor: pointer;
 }
 
@@ -433,13 +433,13 @@ strong {
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .primary-btn {
-  background: #22c55e;
-  color: #052e16;
+  background: #ececee;
+  color: #0b0c0e;
   border-color: transparent;
 }
 
@@ -449,7 +449,7 @@ strong {
 }
 
 .danger-btn {
-  background: #7f1d1d;
-  color: #fee2e2;
-  border-color: rgba(248, 113, 113, 0.35);
+  background: #3a181c;
+  color: #f2c9cb;
+  border-color: #6e2429;
 }
